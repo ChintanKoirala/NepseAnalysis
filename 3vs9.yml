@@ -1,0 +1,67 @@
+name: NEPSE 3vs9 Automation
+
+on:
+  schedule:
+    # Runs every day at 4 PM Nepal Time (10:15 UTC), Sun–Thu
+    - cron: '15 11 * * 0-4'
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Kathmandu
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install nepse-scraper pandas requests beautifulsoup4 gitpython numpy xlsxwriter
+
+      - name: Run automation script
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python "3_vs_9.py"
+
+      - name: Commit and push new CSV files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add *.csv
+          # Only commit if there are changes
+          git diff-index --quiet HEAD || git commit -m "Auto-update: $(date +'%Y-%m-%d')"
+          git remote set-url origin https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}
+          git push origin main
+
+      - name: Keep only latest 3vs9EMA_Cross_for_ file
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # List all matching files sorted by name (descending)
+          files=$(ls -1 3vs9EMA_Cross_for_*.csv 2>/dev/null | sort -r)
+          latest_file=$(echo "$files" | head -n 1)
+
+          if [ -n "$files" ] && [ -n "$latest_file" ]; then
+            old_files=$(echo "$files" | grep -v "$latest_file")
+            if [ -n "$old_files" ]; then
+              echo "Keeping latest: $latest_file"
+              echo "Removing old files: $old_files"
+              git rm -q $old_files
+              git diff-index --quiet HEAD || git commit -m "Auto-cleanup old 3vs9EMA_Cross_for_ files, kept $latest_file"
+              git remote set-url origin https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}
+              git push origin main
+            else
+              echo "No old files to clean up."
+            fi
+          else
+            echo "No files to process."
+          fi
