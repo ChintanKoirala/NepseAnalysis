@@ -91,10 +91,10 @@ def get_latest_file_url(repo_url):
     latest_file_url = file_urls[latest_file_date]
     return latest_file_url
 
-repo_url = 'https://github.com/iamsrijit/Nepse/tree/main'
+repo_url = 'https://github.com/ChintanKoirala/NepseAnalysis/tree/main'
 try:
     latest_file_url = get_latest_file_url(repo_url)
-    latest_file_url = latest_file_url.replace('/iamsrijit/Nepse/blob/main/', '/')
+    latest_file_url = latest_file_url.replace('/ChintanKoirala/NepseAnalysis/blob/main/', '/')
     secondss = pd.read_csv(latest_file_url)
     secondss.columns = ['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Percent Change', 'Volume', '52W_High', '52W_Low']
 except Exception as e:
@@ -183,7 +183,7 @@ token = os.getenv("GH_TOKEN")
 def upload_file_to_github(df, filename):
     csv_b64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
     headers = {'Authorization': f'token {token}'}
-    upload_url = f'https://api.github.com/repos/iamsrijit/Nepse/contents/{filename}'
+    upload_url = f'https://api.github.com/repos/ChintanKoirala/NepseAnalysis/contents/{filename}'
     response = requests.get(upload_url, headers=headers)
     sha = response.json()['sha'] if response.status_code==200 else None
     payload = {'message': f'Upload {filename}', 'content': csv_b64, 'branch': 'main'}
@@ -198,7 +198,7 @@ upload_file_to_github(latest_crossovers, f'EMA_Cross_for_{datetime.today().strft
 # ------------------------ Remove old files from GitHub repo ------------------------
 repo_dir = './nepse_repo'
 if not os.path.exists(repo_dir):
-    Repo.clone_from('https://github.com/iamsrijit/Nepse.git', repo_dir)
+    Repo.clone_from('https://github.com/ChintanKoirala/Nepse.git', repo_dir)
 repo = Repo(repo_dir)
 
 all_files = os.listdir(repo_dir)
@@ -222,7 +222,7 @@ try:
     repo.git.add(update=True)
     repo.index.commit('Remove old data files')
     origin = repo.remote(name='origin')
-    origin.set_url(f'https://x-access-token:{token}@github.com/iamsrijit/Nepse.git')
+    origin.set_url(f'https://x-access-token:{token}@github.com/ChintanKoirala/Nepse.git')
     origin.push()
 except Exception as e:
     print(f"Error pushing changes: {e}")
