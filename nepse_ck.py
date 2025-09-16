@@ -170,15 +170,16 @@ if not df.empty:
     today_day_name = datetime.now().strftime('%A')
     file_name_local = f'nepse_{today_day_name}.csv'
     df.to_csv(file_name_local, index=False)
-    print(f"Data saved locally to '{file_name_local}'")
+    print(f"✅ Data saved locally to '{file_name_local}'")
 else:
-    print("No data available to create DataFrame.")
+    print("⚠️ No data available to create DataFrame.")
 
 # -------------------- Upload CSV to GitHub --------------------
-token = os.getenv("GITHUB_TOKEN")  # <-- Get token from GitHub Secrets
+token = os.getenv("GITHUB_TOKEN")  # read from GitHub Actions secret
 
 if not token:
-    raise ValueError("❌ GitHub token not found. Make sure GITHUB_TOKEN is set in GitHub Actions secrets.")
+    print("❌ GitHub token not found. Did you set `GITHUB_TOKEN` in your workflow?")
+    sys.exit(1)
 
 repo = "ChintanKoirala/NepseAnalysis"
 branch = "main"
@@ -186,14 +187,14 @@ file_name_github = f"daily_data/nepse_{datetime.today().strftime('%Y-%m-%d')}.cs
 upload_url = f"https://api.github.com/repos/{repo}/contents/{file_name_github}"
 
 headers = {
-    "Authorization": f"token {token}",
+    "Authorization": f"Bearer {token}",   # ✅ use Bearer instead of token
     "Accept": "application/vnd.github.v3+json"
 }
 
 # Convert DataFrame to base64
 csv_base64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
 
-# Check if file exists (for update)
+# Check if file exists (to update instead of create)
 response = requests.get(upload_url, headers=headers)
 sha = None
 if response.status_code == 200:
@@ -205,9 +206,9 @@ payload = {
     "branch": branch
 }
 if sha:
-    payload["sha"] = sha  # update if exists
+    payload["sha"] = sha  # update if file already exists
 
-# Upload
+# Upload to GitHub
 response = requests.put(upload_url, headers=headers, json=payload)
 
 if response.status_code in [200, 201]:
