@@ -1,16 +1,25 @@
-name: Run Python Code
+nname: Run Nepse Script
 
-on: [push]
+on: [push]   # runs whenever you push code
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v2
         with:
-          python-version: '3.x'
+          python-version: '3.x'   # e.g. 3.11
+
+      - name: Install dependencies
+        run: |
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
       - name: Run script
-        run: nepse_ck.py
+        run: python nepse_ck.py
+
 
