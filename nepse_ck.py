@@ -228,3 +228,44 @@ else:
     else:
         print(f'Failed to upload {file_name_github}. Status code: {response.status_code}')
         print(response.json())
+# -------------------- Automatically Upload CSV to GitHub --------------------
+# WARNING: Hardcoding token is insecure! Use at your own risk.
+token = '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'
+
+repo = 'ChintanKoirala/NepseAnalysis'
+branch = 'main'
+# Save files inside a "daily_data" folder in repo
+file_name_github = f'daily_data/nepse_{datetime.today().strftime("%Y-%m-%d")}.csv'
+upload_url = f'https://api.github.com/repos/{repo}/contents/{file_name_github}'
+
+headers = {
+    'Authorization': f'token {token}',
+    'Accept': 'application/vnd.github.v3+json'
+}
+
+# Convert DataFrame to base64
+csv_base64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
+
+# Check if file exists to get SHA
+response = requests.get(upload_url, headers=headers)
+sha = None
+if response.status_code == 200:
+    sha = response.json().get('sha')
+
+# Prepare payload
+payload = {
+    'message': f'Upload NEPSE data {datetime.today().strftime("%Y-%m-%d")}',
+    'content': csv_base64,
+    'branch': branch
+}
+if sha:
+    payload['sha'] = sha  # Update existing file if it exists
+
+# Upload file
+response = requests.put(upload_url, headers=headers, json=payload)
+
+if response.status_code in [200, 201]:
+    print(f'File {file_name_github} uploaded successfully to GitHub!')
+else:
+    print(f'Failed to upload {file_name_github}. Status code: {response.status_code}')
+    print(response.json())
