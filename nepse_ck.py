@@ -180,13 +180,13 @@ else:
 # -------------------- View Result Output --------------------
 if not df.empty:
     print("\n----- NEPSE Today Price Data -----")
-    print(df.head(20))  # Show first 20 rows
+    print(df.head(20))  # Display first 20 rows
     print(f"\nTotal companies: {len(df)}")
 else:
     print("No data to display.")
 
 # -------------------- Upload CSV to GitHub --------------------
-# Use a GitHub token stored as a repository secret (recommended)
+# Make sure to set GITHUB_TOKEN as a repository secret or environment variable
 token = os.getenv('GITHUB_TOKEN')
 
 if not token:
@@ -205,11 +205,11 @@ else:
     # Convert DataFrame to base64
     csv_base64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
 
-    # Check if file already exists to get SHA
+    # Check if file exists
     response = requests.get(upload_url, headers=headers)
     sha = None
     if response.status_code == 200:
-        sha = response.json().get('sha')
+        sha = response.json().get('sha')  # Existing file SHA
 
     payload = {
         'message': f'Upload NEPSE data {datetime.today().strftime("%Y-%m-%d")}',
@@ -217,9 +217,9 @@ else:
         'branch': branch
     }
     if sha:
-        payload['sha'] = sha  # Update existing file if exists
+        payload['sha'] = sha  # Update file if it exists
 
-    # Upload file
+    # Upload file to GitHub
     response = requests.put(upload_url, headers=headers, json=payload)
 
     if response.status_code in [200, 201]:
