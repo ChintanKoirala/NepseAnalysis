@@ -3,26 +3,27 @@ import sys
 import subprocess
 import os
 import base64
-import requests
-import pandas as pd
 from datetime import datetime
 
 # -------------------- Install dependencies if missing --------------------
 def install(package):
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "--quiet", package])
 
+# Install and import nepse_scraper
 try:
     from nepse_scraper import Nepse_scraper
 except ModuleNotFoundError:
     install("nepse-scraper")
     from nepse_scraper import Nepse_scraper
 
+# Install and import pandas
 try:
     import pandas as pd
 except ModuleNotFoundError:
     install("pandas")
     import pandas as pd
 
+# Install and import requests
 try:
     import requests
 except ModuleNotFoundError:
@@ -54,6 +55,7 @@ for item in content_data:
 
 df = pd.DataFrame(filtered_data, columns=columns)
 
+# -------------------- Save CSV locally --------------------
 if not df.empty:
     today_day_name = datetime.now().strftime('%A')
     file_name_local = f'nepse_{today_day_name}.csv'
@@ -65,7 +67,7 @@ else:
 # -------------------- View Result Output --------------------
 if not df.empty:
     print("\n----- NEPSE Today Price Data -----")
-    print(df.head(20))  # Show first 20 rows; adjust as needed
+    print(df.head(20))  # Show first 20 rows; adjust if needed
     print(f"\nTotal companies: {len(df)}")
 else:
     print("No data to display.")
