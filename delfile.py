@@ -11,7 +11,7 @@ if not token:
 
 repo = "ChintanKoirala/NepseAnalysis"
 branch = "main"
-file_name = "3vs9.yml"
+file_name = "latest_code.py (1).gpg"
 file_url = f"https://api.github.com/repos/{repo}/contents/{file_name}"
 
 headers = {
