@@ -1,9 +1,9 @@
 name: Run Nepse Script
 
 on:
-  push:
-    branches:
-      - main   # Or any branch you want
+  schedule:
+    - cron: "0 9 * * *"   # Every day at 9:00 UTC
+  workflow_dispatch:       # Allow manual run
 
 jobs:
   run-python:
@@ -12,20 +12,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}   # ✅ Use GitHub token for pushing changes
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: "3.10"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        run: pip install --upgrade nepse-scraper pandas requests
 
-      - name: Run Python script
+      - name: Run Nepse Script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # 👈 Securely injects token
         run: python nepse_ck.py
-
-      - name: Commit and Push changes
