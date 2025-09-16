@@ -3,7 +3,7 @@ name: Run Nepse Script
 on:
   schedule:
     - cron: "0 9 * * *"   # Every day at 9:00 UTC
-  workflow_dispatch:
+  workflow_dispatch:       # Allow manual run
   push:
     branches:
       - main
@@ -11,6 +11,10 @@ on:
 jobs:
   run-python:
     runs-on: ubuntu-latest
+
+    # 👇 Needed so the GITHUB_TOKEN can write to your repo
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -26,5 +30,6 @@ jobs:
 
       - name: Run Nepse Script
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # ✅ inject secret
+          # 👇 Pass GitHub Actions token to your script
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python nepse_ck.py
