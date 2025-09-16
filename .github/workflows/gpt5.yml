@@ -3,7 +3,10 @@ name: Run Nepse Script
 on:
   schedule:
     - cron: "0 9 * * *"   # Every day at 9:00 UTC
-  workflow_dispatch:       # Allow manual run
+  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   run-python:
@@ -23,5 +26,5 @@ jobs:
 
       - name: Run Nepse Script
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # 👈 Securely injects token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # ✅ inject secret
         run: python nepse_ck.py
