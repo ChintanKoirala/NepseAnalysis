@@ -1,7 +1,3 @@
-!pip install nepse-scraper
-!pip install xlsxwriter
-!pip install gitpython
-!pip install gitpython pandas
 from nepse_scraper import Nepse_scraper
 import pandas as pd
 from datetime import datetime
