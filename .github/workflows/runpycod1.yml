@@ -12,4 +12,5 @@ jobs:
         with:
           python-version: '3.x'
       - name: Run script
-        run: python your_script.py
+        run: nepse_ck.py
+
