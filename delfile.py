@@ -11,7 +11,7 @@ if not token:
 
 repo = "ChintanKoirala/NepseAnalysis"
 branch = "main"
-file_name = "daily_data/nepse_2025-09-16.csv"
+file_name = "espen_2025-09-14.csv"
 file_url = f"https://api.github.com/repos/{repo}/contents/{file_name}"
 
 headers = {
