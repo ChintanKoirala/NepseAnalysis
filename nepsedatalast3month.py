@@ -26,37 +26,47 @@ except ModuleNotFoundError:
     install("requests")
     import requests
 
-# -------------------- Scrape NEPSE Data (last 3 months) --------------------
+# -------------------- Scrape NEPSE Data (last 3 months, skip closed days) --------------------
 request_obj = Nepse_scraper()
 
 end_date = datetime.today()
-start_date = end_date - timedelta(days=90)  # approx. last 3 months
-
-# Fetch price history for all companies
-history_data = request_obj.get_price_history(
-    start_date=start_date.strftime("%Y-%m-%d"),
-    end_date=end_date.strftime("%Y-%m-%d")
-)
-
-content_data = history_data.get("content", [])
+start_date = end_date - timedelta(days=90)  # last 3 months
 
 filtered_data = []
 columns = ["Symbol", "Date", "Open", "Close", "Volume"]
 
-for item in content_data:
-    symbol = item.get("symbol", "")
-    date = item.get("businessDate", "")
-    open_price = item.get("openPrice", "")
-    close_price = item.get("closePrice", "")
-    volume_daily = int(item.get("totalTradedQuantity") or 0)
+# Loop through each day
+date_cursor = start_date
+while date_cursor <= end_date:
+    try:
+        # get_today_price also accepts a date string
+        daily_data = request_obj.get_today_price(date_cursor.strftime("%Y-%m-%d"))
+        content_data = daily_data.get("content", [])
 
-    filtered_data.append({
-        "Symbol": symbol,
-        "Date": date,
-        "Open": open_price,
-        "Close": close_price,
-        "Volume": volume_daily
-    })
+        if not content_data:  # NEPSE closed
+            print(f"⏩ Skipped {date_cursor.strftime('%Y-%m-%d')} (market closed)")
+        else:
+            for item in content_data:
+                symbol = item.get("symbol", "")
+                date = item.get("businessDate", "")
+                open_price = item.get("openPrice", "")
+                close_price = item.get("closePrice", "")
+                volume_daily = int(item.get("totalTradedQuantity") or 0)
+
+                filtered_data.append({
+                    "Symbol": symbol,
+                    "Date": date,
+                    "Open": open_price,
+                    "Close": close_price,
+                    "Volume": volume_daily
+                })
+
+            print(f"✅ Collected data for {date_cursor.strftime('%Y-%m-%d')}")
+
+    except Exception as e:
+        print(f"⚠️ Failed to fetch {date_cursor.strftime('%Y-%m-%d')}: {e}")
+
+    date_cursor += timedelta(days=1)
 
 df = pd.DataFrame(filtered_data, columns=columns)
 
@@ -71,16 +81,14 @@ if not df.empty:
     df.to_csv(file_name_local, index=False)
     print(f"✅ Data saved locally to '{file_name_local}'")
 else:
-    print("⚠️ No data available to create DataFrame.")
+    print("⚠️ No trading data available in the last 3 months.")
     sys.exit(0)
 
 # -------------------- Upload CSV to GitHub --------------------
-# Try GitHub Actions token first
 token = os.getenv("GITHUB_TOKEN")
 
-# Fallback to personal access token (PAT) if running locally
 if not token:
-    token = os.getenv("GH_PAT")  # Create a secret for local runs
+    token = os.getenv("GH_PAT")
     if not token:
         print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
         sys.exit(1)
@@ -97,10 +105,8 @@ headers = {
     "Accept": "application/vnd.github.v3+json"
 }
 
-# Convert DataFrame to base64
 csv_base64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
 
-# Check if file exists
 response = requests.get(upload_url, headers=headers)
 sha = None
 if response.status_code == 200:
@@ -112,9 +118,8 @@ payload = {
     "branch": branch
 }
 if sha:
-    payload["sha"] = sha  # update if file exists
+    payload["sha"] = sha
 
-# Upload
 response = requests.put(upload_url, headers=headers, json=payload)
 
 if response.status_code in [200, 201]:
