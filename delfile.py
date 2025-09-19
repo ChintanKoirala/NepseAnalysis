@@ -45,85 +45,85 @@
 
 
 
-# # del all uploaded files except last two days file
-# import os
-# import requests
-# from datetime import datetime
+# del all uploaded files except last two days file
+import os
+import requests
+from datetime import datetime
 
-# # -------------------- Get GitHub token from environment --------------------
-# token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
-# if not token:
-#     print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
-#     exit(1)
+# -------------------- Get GitHub token from environment --------------------
+token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
+if not token:
+    print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
+    exit(1)
 
-# # -------------------- Repo & folder settings --------------------
-# repo = "ChintanKoirala/NepseAnalysis"
-# branch = "main"
-# folder = "daily_data"
+# -------------------- Repo & folder settings --------------------
+repo = "ChintanKoirala/NepseAnalysis"
+branch = "main"
+folder = "daily_data"
 
-# # GitHub API URL for the folder
-# folder_url = f"https://api.github.com/repos/{repo}/contents/{folder}"
+# GitHub API URL for the folder
+folder_url = f"https://api.github.com/repos/{repo}/contents/{folder}"
 
-# headers = {
-#     "Authorization": f"Bearer {token}",
-#     "Accept": "application/vnd.github.v3+json"
-# }
+headers = {
+    "Authorization": f"Bearer {token}",
+    "Accept": "application/vnd.github.v3+json"
+}
 
-# # -------------------- Get list of files in folder --------------------
-# response = requests.get(folder_url, headers=headers, params={"ref": branch})
+# -------------------- Get list of files in folder --------------------
+response = requests.get(folder_url, headers=headers, params={"ref": branch})
 
-# if response.status_code == 401:
-#     print("❌ Unauthorized. Bad credentials or token missing required scopes.")
-#     exit(1)
-# elif response.status_code != 200:
-#     print(f"❌ Failed to fetch folder contents. Status code: {response.status_code}")
-#     print(response.json())
-#     exit(1)
+if response.status_code == 401:
+    print("❌ Unauthorized. Bad credentials or token missing required scopes.")
+    exit(1)
+elif response.status_code != 200:
+    print(f"❌ Failed to fetch folder contents. Status code: {response.status_code}")
+    print(response.json())
+    exit(1)
 
-# files = response.json()
+files = response.json()
 
-# # Ensure files is a list
-# if not isinstance(files, list):
-#     print("❌ Unexpected response from GitHub API:", files)
-#     exit(1)
+# Ensure files is a list
+if not isinstance(files, list):
+    print("❌ Unexpected response from GitHub API:", files)
+    exit(1)
 
-# # -------------------- Extract CSV files with dates --------------------
-# dated_files = []
-# for f in files:
-#     name = f.get("name", "")
-#     sha = f.get("sha", "")
-#     if name.endswith(".csv") and "_" in name:
-#         try:
-#             # Assuming format: prefix_YYYY-MM-DD.csv
-#             date_str = name.split("_")[-1].replace(".csv", "")
-#             file_date = datetime.strptime(date_str, "%Y-%m-%d")
-#             dated_files.append((file_date, name, sha))
-#         except ValueError:
-#             continue
+# -------------------- Extract CSV files with dates --------------------
+dated_files = []
+for f in files:
+    name = f.get("name", "")
+    sha = f.get("sha", "")
+    if name.endswith(".csv") and "_" in name:
+        try:
+            # Assuming format: prefix_YYYY-MM-DD.csv
+            date_str = name.split("_")[-1].replace(".csv", "")
+            file_date = datetime.strptime(date_str, "%Y-%m-%d")
+            dated_files.append((file_date, name, sha))
+        except ValueError:
+            continue
 
-# # -------------------- Sort by date descending --------------------
-# dated_files.sort(reverse=True, key=lambda x: x[0])
+# -------------------- Sort by date descending --------------------
+dated_files.sort(reverse=True, key=lambda x: x[0])
 
-# # -------------------- Keep last 2 files only --------------------
-# to_delete = dated_files[2:]   # everything except the latest 2 files
+# -------------------- Keep last 2 files only --------------------
+to_delete = dated_files[2:]   # everything except the latest 2 files
 
-# if not to_delete:
-#     print("✅ No old files to delete. Only 2 or fewer files exist.")
-#     exit(0)
+if not to_delete:
+    print("✅ No old files to delete. Only 2 or fewer files exist.")
+    exit(0)
 
-# # -------------------- Delete old files --------------------
-# for file_date, name, sha in to_delete:
-#     file_url = f"{folder_url}/{name}"
-#     payload = {
-#         "message": f"Delete old NEPSE file {name}",
-#         "sha": sha,
-#         "branch": branch
-#     }
+# -------------------- Delete old files --------------------
+for file_date, name, sha in to_delete:
+    file_url = f"{folder_url}/{name}"
+    payload = {
+        "message": f"Delete old NEPSE file {name}",
+        "sha": sha,
+        "branch": branch
+    }
 
-#     delete_response = requests.delete(file_url, headers=headers, json=payload)
+    delete_response = requests.delete(file_url, headers=headers, json=payload)
 
-#     if delete_response.status_code in (200, 204):
-#         print(f"✅ Deleted {name}")
-#     else:
-#         print(f"❌ Failed to delete {name}. Status code: {delete_response.status_code}")
-#         print(delete_response.json())
+    if delete_response.status_code in (200, 204):
+        print(f"✅ Deleted {name}")
+    else:
+        print(f"❌ Failed to delete {name}. Status code: {delete_response.status_code}")
+        print(delete_response.json())
