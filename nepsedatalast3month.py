@@ -63,7 +63,7 @@ else:
 
 
 
-upload todays data in github ripo
+# upload todays data in github ripo
 Try GitHub Actions token first
 token = os.getenv("GITHUB_TOKEN")
 
