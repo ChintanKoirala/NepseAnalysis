@@ -78,7 +78,7 @@ from datetime import datetime
 
 # -------------------- Config --------------------
 COLUMNS = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
-LATEST_URL = "https://raw.githubusercontent.com/ChintanKoirala/NepseAnalysis/main/daily_data/espen_2025-09-18.csv"
+LATEST_URL = "https://raw.githubusercontent.com/ChintanKoirala/NepseAnalysis/main/daily_data/combined_nepse_2025-09-18.csv"
 MAX_DAYS = 60  # keep only latest 60 days
 
 # -------------------- Fetch Today's NEPSE Data --------------------
