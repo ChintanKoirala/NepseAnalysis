@@ -140,3 +140,58 @@ try:
 except Exception as e:
     print(f"⚠️ Failed to merge with GitHub CSV: {e}")
 
+
+
+
+# upload outputfiles in github ripo
+import requests
+import base64
+import os
+
+# -------------------- Config --------------------
+GITHUB_TOKEN = os.getenv("GH_PAT")  # Your Personal Access Token
+REPO = "ChintanKoirala/NepseAnalysis"  # format: username/repo
+BRANCH = "main"  # branch to push
+FILE_PATH = "combined_nepse.csv"  # local CSV file to upload
+REPO_PATH = "daily_data/combined_nepse.csv"  # path in repo
+
+if not GITHUB_TOKEN:
+    raise ValueError("GitHub token not found. Set GH_PAT environment variable.")
+
+# -------------------- Read file and encode --------------------
+with open(FILE_PATH, "rb") as f:
+    content = f.read()
+encoded_content = base64.b64encode(content).decode()
+
+# -------------------- Get SHA if file exists --------------------
+url = f"https://api.github.com/repos/{REPO}/contents/{REPO_PATH}"
+headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+response = requests.get(url, headers=headers)
+
+if response.status_code == 200:
+    # File exists, get SHA
+    sha = response.json()["sha"]
+    print("File exists. It will be updated.")
+else:
+    sha = None
+    print("File does not exist. It will be created.")
+
+# -------------------- Prepare commit data --------------------
+data = {
+    "message": "Update combined NEPSE CSV",
+    "content": encoded_content,
+    "branch": BRANCH
+}
+if sha:
+    data["sha"] = sha
+
+# -------------------- Upload / Update file --------------------
+response = requests.put(url, headers=headers, json=data)
+
+if response.status_code in [200, 201]:
+    print("✅ File uploaded/updated successfully!")
+else:
+    print(f"❌ Failed to upload file: {response.status_code}")
+    print(response.json())
+
+
