@@ -42,13 +42,14 @@
 # }
 
 # delete_response = requests.delete(file_url, headers=headers, json=payload)
+import os
 import requests
 from datetime import datetime
 
-# -------------------- Get GitHub token --------------------
-token = input("Enter your GitHub Personal Access Token: ").strip()
+# -------------------- Get GitHub token from environment --------------------
+token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
 if not token:
-    print("❌ GitHub token is required.")
+    print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
     exit(1)
 
 # -------------------- Repo & folder settings --------------------
@@ -122,9 +123,3 @@ for file_date, name, sha in to_delete:
     else:
         print(f"❌ Failed to delete {name}. Status code: {delete_response.status_code}")
         print(delete_response.json())
-
-# if delete_response.status_code in (200, 204):
-#     print(f"✅ File {file_name} deleted successfully from GitHub!")
-# else:
-#     print(f"❌ Failed to delete {file_name}. Status code: {delete_response.status_code}")
-#     print(delete_response.json())
