@@ -64,7 +64,23 @@ else:
 
 
 # upload todays data in github ripo
-Try GitHub Actions token first
+import os
+import sys
+import base64
+import requests
+from datetime import datetime
+import pandas as pd
+
+# -------------------- Example DataFrame --------------------
+# Replace this with your actual NEPSE data DataFrame
+df = pd.DataFrame({
+    "Symbol": ["NABIL", "NICA"],
+    "Price": [750, 820],
+    "Volume": [1200, 900]
+})
+
+# -------------------- GitHub Token Handling --------------------
+# Try GitHub Actions token first
 token = os.getenv("GITHUB_TOKEN")
 
 # Fallback to personal access token (PAT) if running locally
@@ -75,7 +91,10 @@ if not token:
         sys.exit(1)
     else:
         print("✅ Using personal access token from GH_PAT")
+else:
+    print("✅ Using GitHub Actions token")
 
+# -------------------- GitHub Repo Config --------------------
 repo = "ChintanKoirala/NepseAnalysis"
 branch = "main"
 file_name_github = f"daily_data/nepse_{datetime.today().strftime('%Y-%m-%d')}.csv"
@@ -86,15 +105,16 @@ headers = {
     "Accept": "application/vnd.github.v3+json"
 }
 
-# Convert DataFrame to base64
+# -------------------- Convert DataFrame to Base64 --------------------
 csv_base64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
 
-# Check if file exists
+# -------------------- Check if File Already Exists --------------------
 response = requests.get(upload_url, headers=headers)
 sha = None
 if response.status_code == 200:
     sha = response.json().get("sha")
 
+# -------------------- Prepare Payload --------------------
 payload = {
     "message": f"Upload NEPSE data {datetime.today().strftime('%Y-%m-%d')}",
     "content": csv_base64,
@@ -103,7 +123,7 @@ payload = {
 if sha:
     payload["sha"] = sha  # update if file exists
 
-# Upload
+# -------------------- Upload File --------------------
 response = requests.put(upload_url, headers=headers, json=payload)
 
 if response.status_code in [200, 201]:
@@ -111,4 +131,3 @@ if response.status_code in [200, 201]:
 else:
     print(f"❌ Failed to upload {file_name_github}. Status code: {response.status_code}")
     print(response.json())
-
