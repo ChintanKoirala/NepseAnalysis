@@ -143,55 +143,73 @@ except Exception as e:
 
 
 
-# upload outputfiles in github ripo
-import requests
-import base64
+# upload output files in github ripo
 import os
+import sys
+import base64
+import requests
+from datetime import datetime
 
-# -------------------- Config --------------------
-GITHUB_TOKEN = os.getenv("GH_PAT")  # Your Personal Access Token
-REPO = "ChintanKoirala/NepseAnalysis"  # format: username/repo
-BRANCH = "main"  # branch to push
-FILE_PATH = "combined_nepse.csv"  # local CSV file to upload
-REPO_PATH = "daily_data/combined_nepse.csv"  # path in repo
+# -------------------- GitHub Config --------------------
+repo = "ChintanKoirala/NepseAnalysis"
+branch = "main"
 
-if not GITHUB_TOKEN:
-    raise ValueError("GitHub token not found. Set GH_PAT environment variable.")
+# List of local files and their target paths in the repo
+files_to_upload = [
+    {"local": "nepse_today.csv", "repo": f"daily_data/nepse_today_{datetime.today().strftime('%Y-%m-%d')}.csv"},
+    {"local": "combined_nepse.csv", "repo": f"daily_data/combined_nepse_{datetime.today().strftime('%Y-%m-%d')}.csv"}
+]
 
-# -------------------- Read file and encode --------------------
-with open(FILE_PATH, "rb") as f:
-    content = f.read()
-encoded_content = base64.b64encode(content).decode()
-
-# -------------------- Get SHA if file exists --------------------
-url = f"https://api.github.com/repos/{REPO}/contents/{REPO_PATH}"
-headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-response = requests.get(url, headers=headers)
-
-if response.status_code == 200:
-    # File exists, get SHA
-    sha = response.json()["sha"]
-    print("File exists. It will be updated.")
+# -------------------- Get GitHub Token --------------------
+token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
+if not token:
+    print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
+    sys.exit(1)
 else:
-    sha = None
-    print("File does not exist. It will be created.")
+    print("✅ Using GitHub token.")
 
-# -------------------- Prepare commit data --------------------
-data = {
-    "message": "Update combined NEPSE CSV",
-    "content": encoded_content,
-    "branch": BRANCH
+headers = {
+    "Authorization": f"Bearer {token}",
+    "Accept": "application/vnd.github.v3+json"
 }
-if sha:
-    data["sha"] = sha
 
-# -------------------- Upload / Update file --------------------
-response = requests.put(url, headers=headers, json=data)
+# -------------------- Upload files --------------------
+for file in files_to_upload:
+    local_file = file["local"]
+    repo_file = file["repo"]
+    upload_url = f"https://api.github.com/repos/{repo}/contents/{repo_file}"
 
-if response.status_code in [200, 201]:
-    print("✅ File uploaded/updated successfully!")
-else:
-    print(f"❌ Failed to upload file: {response.status_code}")
-    print(response.json())
+    # Read and encode file
+    try:
+        with open(local_file, "rb") as f:
+            content = f.read()
+        encoded_content = base64.b64encode(content).decode()
+    except Exception as e:
+        print(f"❌ Failed to read '{local_file}': {e}")
+        continue
 
+    # Check if file exists in repo
+    response = requests.get(upload_url, headers=headers)
+    sha = None
+    if response.status_code == 200:
+        sha = response.json().get("sha")
+        print(f"ℹ️ File '{repo_file}' exists. It will be updated.")
+    else:
+        print(f"ℹ️ File '{repo_file}' does not exist. It will be created.")
 
+    # Prepare payload
+    payload = {
+        "message": f"Upload {repo_file} {datetime.today().strftime('%Y-%m-%d')}",
+        "content": encoded_content,
+        "branch": branch
+    }
+    if sha:
+        payload["sha"] = sha
+
+    # Upload / update
+    response = requests.put(upload_url, headers=headers, json=payload)
+    if response.status_code in [200, 201]:
+        print(f"✅ File '{repo_file}' uploaded successfully!")
+    else:
+        print(f"❌ Failed to upload '{repo_file}'. Status code: {response.status_code}")
+        print(response.json())
