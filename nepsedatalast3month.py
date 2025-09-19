@@ -179,6 +179,11 @@ for file in files_to_upload:
     repo_file = file["repo"]
     upload_url = f"https://api.github.com/repos/{repo}/contents/{repo_file}"
 
+    # Check if local file exists
+    if not os.path.exists(local_file):
+        print(f"⚠️ Local file '{local_file}' does not exist. Skipping upload.")
+        continue
+
     # Read and encode file
     try:
         with open(local_file, "rb") as f:
@@ -189,13 +194,16 @@ for file in files_to_upload:
         continue
 
     # Check if file exists in repo
-    response = requests.get(upload_url, headers=headers)
-    sha = None
-    if response.status_code == 200:
-        sha = response.json().get("sha")
-        print(f"ℹ️ File '{repo_file}' exists. It will be updated.")
-    else:
-        print(f"ℹ️ File '{repo_file}' does not exist. It will be created.")
+    try:
+        response = requests.get(upload_url, headers=headers)
+        sha = response.json().get("sha") if response.status_code == 200 else None
+        if sha:
+            print(f"ℹ️ File '{repo_file}' exists in repo. It will be updated.")
+        else:
+            print(f"ℹ️ File '{repo_file}' does not exist in repo. It will be created.")
+    except Exception as e:
+        print(f"⚠️ Failed to check '{repo_file}' in repo: {e}")
+        sha = None
 
     # Prepare payload
     payload = {
@@ -207,9 +215,12 @@ for file in files_to_upload:
         payload["sha"] = sha
 
     # Upload / update
-    response = requests.put(upload_url, headers=headers, json=payload)
-    if response.status_code in [200, 201]:
-        print(f"✅ File '{repo_file}' uploaded successfully!")
-    else:
-        print(f"❌ Failed to upload '{repo_file}'. Status code: {response.status_code}")
-        print(response.json())
+    try:
+        response = requests.put(upload_url, headers=headers, json=payload)
+        if response.status_code in [200, 201]:
+            print(f"✅ File '{repo_file}' uploaded successfully!")
+        else:
+            print(f"❌ Failed to upload '{repo_file}'. Status code: {response.status_code}")
+            print(response.json())
+    except Exception as e:
+        print(f"❌ Exception during upload of '{repo_file}': {e}")
