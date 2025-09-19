@@ -10,7 +10,7 @@ if not token:
     sys.exit(1)
 
 repo = "ChintanKoirala/NepseAnalysis"
-branch = "main"
+branch = "main/daily_data"
 file_name = "nepse_2025-09-16.csv"
 file_url = f"https://api.github.com/repos/{repo}/contents/{file_name}"
 
