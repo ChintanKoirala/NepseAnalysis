@@ -62,6 +62,60 @@ else:
     print("⚠️ No data available to create DataFrame.")
 
 
+
+# upload todays data in github ripo
+# Try GitHub Actions token first
+# token = os.getenv("GITHUB_TOKEN")
+
+# # Fallback to personal access token (PAT) if running locally
+# if not token:
+#     token = os.getenv("GH_PAT")  # Create a secret for local runs
+#     if not token:
+#         print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
+#         sys.exit(1)
+#     else:
+#         print("✅ Using personal access token from GH_PAT")
+
+# repo = "ChintanKoirala/NepseAnalysis"
+# branch = "main"
+# file_name_github = f"daily_data/nepse_{datetime.today().strftime('%Y-%m-%d')}.csv"
+# upload_url = f"https://api.github.com/repos/{repo}/contents/{file_name_github}"
+
+# headers = {
+#     "Authorization": f"Bearer {token}",
+#     "Accept": "application/vnd.github.v3+json"
+# }
+
+# # Convert DataFrame to base64
+# csv_base64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
+
+# # Check if file exists
+# response = requests.get(upload_url, headers=headers)
+# sha = None
+# if response.status_code == 200:
+#     sha = response.json().get("sha")
+
+# payload = {
+#     "message": f"Upload NEPSE data {datetime.today().strftime('%Y-%m-%d')}",
+#     "content": csv_base64,
+#     "branch": branch
+# }
+# if sha:
+#     payload["sha"] = sha  # update if file exists
+
+# # Upload
+# response = requests.put(upload_url, headers=headers, json=payload)
+
+# if response.status_code in [200, 201]:
+#     print(f"✅ File {file_name_github} uploaded successfully to GitHub!")
+# else:
+#     print(f"❌ Failed to upload {file_name_github}. Status code: {response.status_code}")
+#     print(response.json())
+
+
+
+
+
 # this code combines last traded day data from nepse and combines it with other latest data for 60 days only
 try:
     from nepse_scraper import Nepse_scraper
@@ -153,12 +207,9 @@ from datetime import datetime
 # -------------------- GitHub Config --------------------
 repo = "ChintanKoirala/NepseAnalysis"
 branch = "main"
-
-# List of local files and their target paths in the repo
-files_to_upload = [
-    {"local": "nepse_today.csv", "repo": f"daily_data/nepse_today_{datetime.today().strftime('%Y-%m-%d')}.csv"},
-    {"local": "combined_nepse.csv", "repo": f"daily_data/combined_nepse_{datetime.today().strftime('%Y-%m-%d')}.csv"}
-]
+local_file = "combined_nepse.csv"
+repo_file = f"daily_data/combined_nepse_{datetime.today().strftime('%Y-%m-%d')}.csv"
+upload_url = f"https://api.github.com/repos/{repo}/contents/{repo_file}"
 
 # -------------------- Get GitHub Token --------------------
 token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
@@ -173,54 +224,51 @@ headers = {
     "Accept": "application/vnd.github.v3+json"
 }
 
-# -------------------- Upload files --------------------
-for file in files_to_upload:
-    local_file = file["local"]
-    repo_file = file["repo"]
-    upload_url = f"https://api.github.com/repos/{repo}/contents/{repo_file}"
+# -------------------- Check local file --------------------
+if not os.path.exists(local_file):
+    print(f"⚠️ Local file '{local_file}' does not exist. Exiting.")
+    sys.exit(1)
 
-    # Check if local file exists
-    if not os.path.exists(local_file):
-        print(f"⚠️ Local file '{local_file}' does not exist. Skipping upload.")
-        continue
+# -------------------- Read & encode file --------------------
+try:
+    with open(local_file, "rb") as f:
+        content = f.read()
+    encoded_content = base64.b64encode(content).decode()
+    print(f"ℹ️ File '{local_file}' read successfully.")
+except Exception as e:
+    print(f"❌ Failed to read '{local_file}': {e}")
+    sys.exit(1)
 
-    # Read and encode file
-    try:
-        with open(local_file, "rb") as f:
-            content = f.read()
-        encoded_content = base64.b64encode(content).decode()
-    except Exception as e:
-        print(f"❌ Failed to read '{local_file}': {e}")
-        continue
+# -------------------- Check if file exists in repo --------------------
+sha = None
+try:
+    response = requests.get(upload_url, headers=headers)
+    if response.status_code == 200:
+        sha = response.json().get("sha")
+        print(f"ℹ️ File '{repo_file}' exists in repo. It will be updated.")
+    elif response.status_code == 404:
+        print(f"ℹ️ File '{repo_file}' does not exist in repo. It will be created.")
+    else:
+        print(f"⚠️ Unexpected status {response.status_code} when checking repo.")
+        print(response.json())
+except Exception as e:
+    print(f"⚠️ Failed to check file in repo: {e}")
 
-    # Check if file exists in repo
-    try:
-        response = requests.get(upload_url, headers=headers)
-        sha = response.json().get("sha") if response.status_code == 200 else None
-        if sha:
-            print(f"ℹ️ File '{repo_file}' exists in repo. It will be updated.")
-        else:
-            print(f"ℹ️ File '{repo_file}' does not exist in repo. It will be created.")
-    except Exception as e:
-        print(f"⚠️ Failed to check '{repo_file}' in repo: {e}")
-        sha = None
+# -------------------- Upload / Update --------------------
+payload = {
+    "message": f"Upload {repo_file} {datetime.today().strftime('%Y-%m-%d')}",
+    "content": encoded_content,
+    "branch": branch
+}
+if sha:
+    payload["sha"] = sha
 
-    # Prepare payload
-    payload = {
-        "message": f"Upload {repo_file} {datetime.today().strftime('%Y-%m-%d')}",
-        "content": encoded_content,
-        "branch": branch
-    }
-    if sha:
-        payload["sha"] = sha
-
-    # Upload / update
-    try:
-        response = requests.put(upload_url, headers=headers, json=payload)
-        if response.status_code in [200, 201]:
-            print(f"✅ File '{repo_file}' uploaded successfully!")
-        else:
-            print(f"❌ Failed to upload '{repo_file}'. Status code: {response.status_code}")
-            print(response.json())
-    except Exception as e:
-        print(f"❌ Exception during upload of '{repo_file}': {e}")
+try:
+    response = requests.put(upload_url, headers=headers, json=payload)
+    if response.status_code in [200, 201]:
+        print(f"✅ File '{repo_file}' uploaded successfully!")
+    else:
+        print(f"❌ Failed to upload '{repo_file}'. Status code: {response.status_code}")
+        print(response.json())
+except Exception as e:
+    print(f"❌ Exception during upload: {e}")
