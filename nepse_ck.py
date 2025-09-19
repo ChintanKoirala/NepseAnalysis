@@ -108,113 +108,117 @@
 # else:
 #     print(f"❌ Failed to upload {file_name_github}. Status code: {response.status_code}")
 #     print(response.json())
-import sys
-import subprocess
-import os
-import base64
-from datetime import datetime
 
-# -------------------- Install dependencies if missing --------------------
-def install(package):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "--quiet", package])
 
-try:
-    from nepse_scraper import Nepse_scraper
-except ModuleNotFoundError:
-    install("nepse-scraper")
-    from nepse_scraper import Nepse_scraper
 
-try:
-    import pandas as pd
-except ModuleNotFoundError:
-    install("pandas")
-    import pandas as pd
+# #here code to start
+# import sys
+# import subprocess
+# import os
+# import base64
+# from datetime import datetime
 
-try:
-    import requests
-except ModuleNotFoundError:
-    install("requests")
-    import requests
+# # -------------------- Install dependencies if missing --------------------
+# def install(package):
+#     subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "--quiet", package])
 
-# -------------------- Scrape NEPSE Data --------------------
-request_obj = Nepse_scraper()
-today_price = request_obj.get_today_price()
-content_data = today_price.get('content', [])
+# try:
+#     from nepse_scraper import Nepse_scraper
+# except ModuleNotFoundError:
+#     install("nepse-scraper")
+#     from nepse_scraper import Nepse_scraper
 
-filtered_data = []
-columns = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
+# try:
+#     import pandas as pd
+# except ModuleNotFoundError:
+#     install("pandas")
+#     import pandas as pd
 
-for item in content_data:
-    symbol = item.get('symbol', '')
-    date = item.get('businessDate', '')
-    open_price = item.get('openPrice', '')
-    close_price = item.get('closePrice', '')
-    volume_daily = int(item.get('totalTradedQuantity') or 0)
+# try:
+#     import requests
+# except ModuleNotFoundError:
+#     install("requests")
+#     import requests
 
-    filtered_data.append({
-        'Symbol': symbol,
-        'Date': date,
-        'Open': open_price,
-        'Close': close_price,
-        'Volume': volume_daily
-    })
+# # -------------------- Scrape NEPSE Data --------------------
+# request_obj = Nepse_scraper()
+# today_price = request_obj.get_today_price()
+# content_data = today_price.get('content', [])
 
-df = pd.DataFrame(filtered_data, columns=columns)
+# filtered_data = []
+# columns = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
 
-# -------------------- Save CSV locally --------------------
-if not df.empty:
-    today_day_name = datetime.now().strftime('%A')
-    file_name_local = f'nepse_{today_day_name}.csv'
-    df.to_csv(file_name_local, index=False)
-    print(f"✅ Data saved locally to '{file_name_local}'")
-else:
-    print("⚠️ No data available to create DataFrame.")
+# for item in content_data:
+#     symbol = item.get('symbol', '')
+#     date = item.get('businessDate', '')
+#     open_price = item.get('openPrice', '')
+#     close_price = item.get('closePrice', '')
+#     volume_daily = int(item.get('totalTradedQuantity') or 0)
 
-# -------------------- Upload CSV to GitHub --------------------
-# Try GitHub Actions token first
-token = os.getenv("GITHUB_TOKEN")
+#     filtered_data.append({
+#         'Symbol': symbol,
+#         'Date': date,
+#         'Open': open_price,
+#         'Close': close_price,
+#         'Volume': volume_daily
+#     })
 
-# Fallback to personal access token (PAT) if running locally
-if not token:
-    token = os.getenv("GH_PAT")  # Create a secret for local runs
-    if not token:
-        print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
-        sys.exit(1)
-    else:
-        print("✅ Using personal access token from GH_PAT")
+# df = pd.DataFrame(filtered_data, columns=columns)
 
-repo = "ChintanKoirala/NepseAnalysis"
-branch = "main"
-file_name_github = f"daily_data/nepse_{datetime.today().strftime('%Y-%m-%d')}.csv"
-upload_url = f"https://api.github.com/repos/{repo}/contents/{file_name_github}"
+# # -------------------- Save CSV locally --------------------
+# if not df.empty:
+#     today_day_name = datetime.now().strftime('%A')
+#     file_name_local = f'nepse_{today_day_name}.csv'
+#     df.to_csv(file_name_local, index=False)
+#     print(f"✅ Data saved locally to '{file_name_local}'")
+# else:
+#     print("⚠️ No data available to create DataFrame.")
 
-headers = {
-    "Authorization": f"Bearer {token}",
-    "Accept": "application/vnd.github.v3+json"
-}
+# # -------------------- Upload CSV to GitHub --------------------
+# # Try GitHub Actions token first
+# token = os.getenv("GITHUB_TOKEN")
 
-# Convert DataFrame to base64
-csv_base64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
+# # Fallback to personal access token (PAT) if running locally
+# if not token:
+#     token = os.getenv("GH_PAT")  # Create a secret for local runs
+#     if not token:
+#         print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
+#         sys.exit(1)
+#     else:
+#         print("✅ Using personal access token from GH_PAT")
 
-# Check if file exists
-response = requests.get(upload_url, headers=headers)
-sha = None
-if response.status_code == 200:
-    sha = response.json().get("sha")
+# repo = "ChintanKoirala/NepseAnalysis"
+# branch = "main"
+# file_name_github = f"daily_data/nepse_{datetime.today().strftime('%Y-%m-%d')}.csv"
+# upload_url = f"https://api.github.com/repos/{repo}/contents/{file_name_github}"
 
-payload = {
-    "message": f"Upload NEPSE data {datetime.today().strftime('%Y-%m-%d')}",
-    "content": csv_base64,
-    "branch": branch
-}
-if sha:
-    payload["sha"] = sha  # update if file exists
+# headers = {
+#     "Authorization": f"Bearer {token}",
+#     "Accept": "application/vnd.github.v3+json"
+# }
 
-# Upload
-response = requests.put(upload_url, headers=headers, json=payload)
+# # Convert DataFrame to base64
+# csv_base64 = base64.b64encode(df.to_csv(index=False).encode()).decode()
 
-if response.status_code in [200, 201]:
-    print(f"✅ File {file_name_github} uploaded successfully to GitHub!")
-else:
-    print(f"❌ Failed to upload {file_name_github}. Status code: {response.status_code}")
-    print(response.json())
+# # Check if file exists
+# response = requests.get(upload_url, headers=headers)
+# sha = None
+# if response.status_code == 200:
+#     sha = response.json().get("sha")
+
+# payload = {
+#     "message": f"Upload NEPSE data {datetime.today().strftime('%Y-%m-%d')}",
+#     "content": csv_base64,
+#     "branch": branch
+# }
+# if sha:
+#     payload["sha"] = sha  # update if file exists
+
+# # Upload
+# response = requests.put(upload_url, headers=headers, json=payload)
+
+# if response.status_code in [200, 201]:
+#     print(f"✅ File {file_name_github} uploaded successfully to GitHub!")
+# else:
+#     print(f"❌ Failed to upload {file_name_github}. Status code: {response.status_code}")
+#     print(response.json())
