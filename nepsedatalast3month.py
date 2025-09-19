@@ -1,72 +1,75 @@
-import requests
+# -------------------- Install & Import Nepse Scraper --------------------
+try:
+    from nepse_scraper import Nepse_scraper
+except ModuleNotFoundError:
+    import sys
+    !{sys.executable} -m pip install nepse-scraper
+    from nepse_scraper import Nepse_scraper
+
+# -------------------- Imports --------------------
 import pandas as pd
 from datetime import datetime
 import glob
 
-# -------------------- Nepse Scraper --------------------
-class Nepse_scraper:
-    BASE_URL = "https://www.nepalstock.com/api/nots/"
-
-    def get_last_n_days(self, symbol, n=10):
-        """
-        Fetch last n days of data for a given symbol
-        Returns a DataFrame with columns: Date, Open, Close, Volume
-        """
-        url = f"{self.BASE_URL}securityDailyPrices?symbol={symbol}"
-        r = requests.get(url)
-        if r.status_code != 200:
-            raise Exception(f"Failed to fetch data for {symbol}")
-        
-        data = r.json().get('data', [])
-        if not data:
-            return pd.DataFrame()  # Return empty DataFrame if no data
-        
-        # Take last n days
-        data = data[-n:]
-        df = pd.DataFrame(data)
-        df = df[['businessDate', 'openPrice', 'closePrice', 'totalTradedQuantity']]
-        df.rename(columns={
-            'businessDate': 'Date',
-            'openPrice': 'Open',
-            'closePrice': 'Close',
-            'totalTradedQuantity': 'Volume'
-        }, inplace=True)
-        df['Date'] = pd.to_datetime(df['Date'])
-        df.sort_values('Date', ascending=False, inplace=True)
-        return df
-
-# -------------------- Create Scraper --------------------
+# -------------------- Create Scraper Object --------------------
 scraper = Nepse_scraper()
 
-# -------------------- Define Symbols --------------------
-symbols = ['NABIL', 'NIBL', 'HBL', 'NEPSE_INDEX']  # Replace with all symbols if needed
+# -------------------- Fetch Today's Price Data --------------------
+try:
+    today_price = scraper.get_today_price()
+    content_data = today_price.get('content', [])
+except Exception as e:
+    print(f"⚠️ Failed to fetch today's data: {e}")
+    content_data = []
 
-# -------------------- Fetch Today's Data --------------------
-today_records = []
+# -------------------- Process Data --------------------
+columns = ['Symbol', 'Date', 'Open', 'Close', 'Percent Change', 'Volume']
+filtered_data = []
 
-for sym in symbols:
-    try:
-        df_sym = scraper.get_last_n_days(sym, n=1)
-        if not df_sym.empty:
-            record = df_sym.iloc[0].to_dict()
-            record['Symbol'] = sym
-            # Calculate percent change
-            record['Percent Change'] = round(
-                ((record['Close'] - record['Open']) / record['Open'] * 100) if record['Open'] else 0, 2
-            )
-            today_records.append(record)
-    except Exception as e:
-        print(f"⚠️ Failed to fetch data for {sym}: {e}")
+for item in content_data:
+    symbol = item.get('symbol', '')
+    date = item.get('businessDate', '')
+    
+    # Safely get open and close prices
+    open_price = float(item.get('openPrice', 0) or 0)
+    close_price = float(item.get('closePrice', 0) or 0)
+    
+    # Calculate percent change
+    percent_change = round(((close_price - open_price) / open_price * 100) if open_price else 0, 2)
+    
+    # Correctly calculate total traded volume
+    volume = 0
+    if 'tradedShares' in item:
+        # If volume is nested in 'tradedShares'
+        try:
+            volume = sum(int(str(x).replace(',', '')) for x in item.get('tradedShares', []))
+        except:
+            volume = 0
+    else:
+        # Use totalTradedQuantity if available
+        try:
+            volume = int(str(item.get('totalTradedQuantity', 0)).replace(',', ''))
+        except:
+            volume = 0
 
-df_today = pd.DataFrame(today_records)
-today_date = datetime.now().strftime('%Y-%m-%d')
-file_today = f"nepse_{today_date}.csv"
+    filtered_data.append({
+        'Symbol': symbol,
+        'Date': date,
+        'Open': open_price,
+        'Close': close_price,
+        'Percent Change': percent_change,
+        'Volume': volume
+    })
 
+# -------------------- Save Today's CSV --------------------
+df_today = pd.DataFrame(filtered_data, columns=columns)
 if not df_today.empty:
-    df_today.to_csv(file_today, index=False)
-    print(f"✅ Today's data saved: {file_today}")
+    today_date = datetime.now().strftime('%Y-%m-%d')
+    file_name = f"nepse_{today_date}.csv"
+    df_today.to_csv(file_name, index=False)
+    print(f"✅ Today's data saved to '{file_name}'")
 else:
-    print("⚠️ No data fetched for today.")
+    print("⚠️ No data available for today.")
 
 # -------------------- Combine Last 15 Days --------------------
 csv_files = sorted(glob.glob("nepse_*.csv"), reverse=True)[:15]  # Last 15 files
@@ -75,10 +78,11 @@ df_list = [pd.read_csv(f) for f in csv_files]
 if df_list:
     df_last15 = pd.concat(df_list, ignore_index=True)
     df_last15['Date'] = pd.to_datetime(df_last15['Date'])
-    df_last15.sort_values(by=['Date', 'Symbol'], ascending=[False, True], inplace=True)
-    file_last15 = f"nepse_last15days_{today_date}.csv"
-    df_last15.to_csv(file_last15, index=False)
-    print(f"✅ Last 15 days data saved: {file_last15}")
+    df_last15 = df_last15.sort_values(by=['Date', 'Symbol'], ascending=[False, True])
+
+    file_name_15 = f"nepse_last15days_{today_date}.csv"
+    df_last15.to_csv(file_name_15, index=False)
+    print(f"✅ Last 15 days data saved to '{file_name_15}'")
     print(df_last15.head())
 else:
     print("⚠️ No previous CSVs found for last 15 days.")
