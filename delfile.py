@@ -46,7 +46,7 @@
 
 
 
-# del all uploaded files except last two days file
+# del all uploaded files except last six files
 import os
 import requests
 from datetime import datetime
@@ -105,16 +105,20 @@ for f in files:
 # -------------------- Sort by date descending --------------------
 dated_files.sort(reverse=True, key=lambda x: x[0])
 
-# -------------------- Keep last 2 files only --------------------
-to_delete = dated_files[2:]   # everything except the latest 2 files
+# -------------------- Keep last 6 files only --------------------
+to_delete = dated_files[6:]   # everything except the latest 6 files
 
 if not to_delete:
-    print("✅ No old files to delete. Only 2 or fewer files exist.")
+    print("✅ No old files to delete. Only 6 or fewer files exist.")
     exit(0)
 
-# # -------------------- Delete old files --------------------
+print("🗑️ Files scheduled for deletion:")
+for _, name, _ in to_delete:
+    print(f"   - {name}")
+
+# -------------------- Delete old files --------------------
 for file_date, name, sha in to_delete:
-    file_url = f"{folder_url}/{name}"
+    file_url = f"https://api.github.com/repos/{repo}/contents/{folder}/{name}"
     payload = {
         "message": f"Delete old NEPSE file {name}",
         "sha": sha,
