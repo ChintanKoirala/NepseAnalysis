@@ -13,7 +13,7 @@ if not token:
 repo = "ChintanKoirala/NepseAnalysis"
 branch = "main"   # ✅ branch is just 'main'
 folder = "daily_data"   # ✅ folder path inside repo
-file_name = "nepse_2025-09-20.csv"
+file_name = "combined_nepse_2025-09-20.csv"
 
 # Full GitHub API URL for file
 file_url = f"https://api.github.com/repos/{repo}/contents/{folder}/{file_name}"
