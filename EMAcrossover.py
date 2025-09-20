@@ -343,85 +343,85 @@ if not df_today.empty and LATEST_URL:
 
 
 # upload output files in github ripo
-import os
-import sys
-import base64
-import requests
-import glob
+# import os
+# import sys
+# import base64
+# import requests
+# import glob
 
-# -------------------- Config --------------------
-repo = "ChintanKoirala/NepseAnalysis"
-branch = "main"
+# # -------------------- Config --------------------
+# repo = "ChintanKoirala/NepseAnalysis"
+# branch = "main"
 
-# -------------------- Find the latest signals file --------------------
-signal_files = sorted(glob.glob("signals_*.csv"), reverse=True)
-if not signal_files:
-    print("❌ No signals_*.csv file found locally. Exiting.")
-    sys.exit(1)
+# # -------------------- Find the latest signals file --------------------
+# signal_files = sorted(glob.glob("signals_*.csv"), reverse=True)
+# if not signal_files:
+#     print("❌ No signals_*.csv file found locally. Exiting.")
+#     sys.exit(1)
 
-local_file = signal_files[0]  # latest file
-last_traded_date = local_file.replace("signals_", "").replace(".csv", "")
-repo_file = f"daily_data/signals_{last_traded_date}.csv"
-upload_url = f"https://api.github.com/repos/{repo}/contents/{repo_file}"
+# local_file = signal_files[0]  # latest file
+# last_traded_date = local_file.replace("signals_", "").replace(".csv", "")
+# repo_file = f"daily_data/signals_{last_traded_date}.csv"
+# upload_url = f"https://api.github.com/repos/{repo}/contents/{repo_file}"
 
-print(f"✅ Latest local signals file detected: {local_file}")
+# print(f"✅ Latest local signals file detected: {local_file}")
 
-# -------------------- Get GitHub Token --------------------
-token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
-if not token:
-    print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
-    sys.exit(1)
-else:
-    print("✅ Using GitHub token.")
+# # -------------------- Get GitHub Token --------------------
+# token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
+# if not token:
+#     print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
+#     sys.exit(1)
+# else:
+#     print("✅ Using GitHub token.")
 
-headers = {
-    "Authorization": f"Bearer {token}",
-    "Accept": "application/vnd.github.v3+json"
-}
+# headers = {
+#     "Authorization": f"Bearer {token}",
+#     "Accept": "application/vnd.github.v3+json"
+# }
 
-# -------------------- Read & encode file --------------------
-try:
-    with open(local_file, "rb") as f:
-        content = f.read()
-    encoded_content = base64.b64encode(content).decode()
-    print(f"ℹ️ File '{local_file}' read successfully.")
-except Exception as e:
-    print(f"❌ Failed to read '{local_file}': {e}")
-    sys.exit(1)
+# # -------------------- Read & encode file --------------------
+# try:
+#     with open(local_file, "rb") as f:
+#         content = f.read()
+#     encoded_content = base64.b64encode(content).decode()
+#     print(f"ℹ️ File '{local_file}' read successfully.")
+# except Exception as e:
+#     print(f"❌ Failed to read '{local_file}': {e}")
+#     sys.exit(1)
 
-# -------------------- Check if file exists in repo --------------------
-sha = None
-try:
-    response = requests.get(upload_url, headers=headers)
-    if response.status_code == 200:
-        sha = response.json().get("sha")
-        print(f"ℹ️ File '{repo_file}' exists in repo. It will be updated.")
-    elif response.status_code == 404:
-        print(f"ℹ️ File '{repo_file}' does not exist in repo. It will be created.")
-    else:
-        print(f"⚠️ Unexpected status {response.status_code} when checking repo.")
-        print(response.json())
-except Exception as e:
-    print(f"⚠️ Failed to check file in repo: {e}")
+# # -------------------- Check if file exists in repo --------------------
+# sha = None
+# try:
+#     response = requests.get(upload_url, headers=headers)
+#     if response.status_code == 200:
+#         sha = response.json().get("sha")
+#         print(f"ℹ️ File '{repo_file}' exists in repo. It will be updated.")
+#     elif response.status_code == 404:
+#         print(f"ℹ️ File '{repo_file}' does not exist in repo. It will be created.")
+#     else:
+#         print(f"⚠️ Unexpected status {response.status_code} when checking repo.")
+#         print(response.json())
+# except Exception as e:
+#     print(f"⚠️ Failed to check file in repo: {e}")
 
-# -------------------- Upload / Update --------------------
-payload = {
-    "message": f"Upload {repo_file} ({last_traded_date})",
-    "content": encoded_content,
-    "branch": branch
-}
-if sha:
-    payload["sha"] = sha
+# # -------------------- Upload / Update --------------------
+# payload = {
+#     "message": f"Upload {repo_file} ({last_traded_date})",
+#     "content": encoded_content,
+#     "branch": branch
+# }
+# if sha:
+#     payload["sha"] = sha
 
-try:
-    response = requests.put(upload_url, headers=headers, json=payload)
-    if response.status_code in [200, 201]:
-        print(f"✅ File '{repo_file}' uploaded successfully!")
-    else:
-        print(f"❌ Failed to upload '{repo_file}'. Status code: {response.status_code}")
-        print(response.json())
-except Exception as e:
-    print(f"❌ Exception during upload: {e}")
+# try:
+#     response = requests.put(upload_url, headers=headers, json=payload)
+#     if response.status_code in [200, 201]:
+#         print(f"✅ File '{repo_file}' uploaded successfully!")
+#     else:
+#         print(f"❌ Failed to upload '{repo_file}'. Status code: {response.status_code}")
+#         print(response.json())
+# except Exception as e:
+#     print(f"❌ Exception during upload: {e}")
 
 
 
