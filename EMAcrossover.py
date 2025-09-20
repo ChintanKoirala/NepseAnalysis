@@ -338,6 +338,85 @@ if not df_today.empty and LATEST_URL:
 
 
 
+# upload output files in github ripo
+import os
+import sys
+import base64
+import requests
+from datetime import datetime
+
+# -------------------- GitHub Config --------------------
+repo = "ChintanKoirala/NepseAnalysis"
+branch = "main"
+local_file = "today_signals.csv"
+repo_file = f"daily_data/today_signals_{datetime.today().strftime('%Y-%m-%d')}.csv"
+upload_url = f"https://api.github.com/repos/{repo}/contents/{repo_file}"
+
+# -------------------- Get GitHub Token --------------------
+token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
+if not token:
+    print("❌ GitHub token not found. Set GITHUB_TOKEN (Actions) or GH_PAT (local).")
+    sys.exit(1)
+else:
+    print("✅ Using GitHub token.")
+
+headers = {
+    "Authorization": f"Bearer {token}",
+    "Accept": "application/vnd.github.v3+json"
+}
+
+# -------------------- Check local file --------------------
+if not os.path.exists(local_file):
+    print(f"⚠️ Local file '{local_file}' does not exist. Exiting.")
+    sys.exit(1)
+
+# -------------------- Read & encode file --------------------
+try:
+    with open(local_file, "rb") as f:
+        content = f.read()
+    encoded_content = base64.b64encode(content).decode()
+    print(f"ℹ️ File '{local_file}' read successfully.")
+except Exception as e:
+    print(f"❌ Failed to read '{local_file}': {e}")
+    sys.exit(1)
+
+# -------------------- Check if file exists in repo --------------------
+sha = None
+try:
+    response = requests.get(upload_url, headers=headers)
+    if response.status_code == 200:
+        sha = response.json().get("sha")
+        print(f"ℹ️ File '{repo_file}' exists in repo. It will be updated.")
+    elif response.status_code == 404:
+        print(f"ℹ️ File '{repo_file}' does not exist in repo. It will be created.")
+    else:
+        print(f"⚠️ Unexpected status {response.status_code} when checking repo.")
+        print(response.json())
+except Exception as e:
+    print(f"⚠️ Failed to check file in repo: {e}")
+
+# -------------------- Upload / Update --------------------
+payload = {
+    "message": f"Upload {repo_file} {datetime.today().strftime('%Y-%m-%d')}",
+    "content": encoded_content,
+    "branch": branch
+}
+if sha:
+    payload["sha"] = sha
+
+try:
+    response = requests.put(upload_url, headers=headers, json=payload)
+    if response.status_code in [200, 201]:
+        print(f"✅ File '{repo_file}' uploaded successfully!")
+    else:
+        print(f"❌ Failed to upload '{repo_file}'. Status code: {response.status_code}")
+        print(response.json())
+except Exception as e:
+    print(f"❌ Exception during upload: {e}")
+
+
+
+
 
 
 
