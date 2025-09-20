@@ -183,6 +183,7 @@ if not df_today.empty and LATEST_URL:
 
 
 # EMA cross calculation and signal generation
+# -------------------- Install nepse_scraper if missing --------------------
 try:
     from nepse_scraper import Nepse_scraper
 except ModuleNotFoundError:
@@ -256,7 +257,7 @@ df_today = pd.DataFrame(filtered_data, columns=COLUMNS)
 
 # -------------------- Save Today's File --------------------
 if not df_today.empty:
-    today_date = datetime.now().strftime('%Y-%m-%d')
+    today_date = df_today['Date'].iloc[0]  # use NEPSE's last traded date
     today_file = f"nepse_{today_date}.csv"
     df_today.to_csv(today_file, index=False)
     print(f"✅ Today's data saved as '{today_file}'")
@@ -322,15 +323,18 @@ if not df_today.empty and LATEST_URL:
         df_combined.to_csv("combined_nepse.csv", index=False)
         print(f"✅ Combined CSV updated with signals (last {MAX_DAYS} days kept)")
 
-        # -------------------- Display Today's Signals --------------------
-        df_today_signals = df_combined[(df_combined['Date'] == today_date) & (df_combined['Remarks'] != "")]
-        if not df_today_signals.empty:
-            df_today_signals = df_today_signals.reset_index(drop=True)
-            df_today_signals.index += 1  # make serial numbers start at 1
-            print("\n📊 Today's Stocks with Signals:")
-            print(df_today_signals[['Symbol', 'Close', 'Volume', 'Remarks']])
+        # -------------------- Save ONLY Last Traded Day Signals with Serial No --------------------
+        df_last_signals = df_combined[(df_combined['Date'] == today_date) & (df_combined['Remarks'] != "")]
+        if not df_last_signals.empty:
+            df_last_signals = df_last_signals.reset_index(drop=True)
+            df_last_signals.index += 1  # serial numbers start at 1
+            df_last_signals.index.name = "S.N."  # add column name
+
+            signals_file = f"signals_{today_date}.csv"
+            df_last_signals.to_csv(signals_file, index=True)  # index saved as serial number
+            print(f"📊 Signals for last traded day saved in '{signals_file}'")
         else:
-            print("\nℹ️ No signals generated for today.")
+            print("\nℹ️ No signals generated for last traded day.")
 
     except Exception as e:
         print(f"⚠️ Failed to merge with GitHub CSV: {e}")
@@ -345,11 +349,17 @@ import base64
 import requests
 from datetime import datetime
 
-# -------------------- GitHub Config --------------------
+# -------------------- Config --------------------
 repo = "ChintanKoirala/NepseAnalysis"
 branch = "main"
-local_file = "today_signals.csv"
-repo_file = f"daily_data/today_signals_{datetime.today().strftime('%Y-%m-%d')}.csv"
+
+# Use last traded date instead of system today
+# (Assume signals_<last_traded_date>.csv already exists locally from the scraper pipeline)
+# For fallback, still use today's date if no specific traded date known
+last_traded_date = datetime.today().strftime('%Y-%m-%d')
+
+local_file = f"signals_{last_traded_date}.csv"
+repo_file = f"daily_data/signals_{last_traded_date}.csv"
 upload_url = f"https://api.github.com/repos/{repo}/contents/{repo_file}"
 
 # -------------------- Get GitHub Token --------------------
@@ -397,7 +407,7 @@ except Exception as e:
 
 # -------------------- Upload / Update --------------------
 payload = {
-    "message": f"Upload {repo_file} {datetime.today().strftime('%Y-%m-%d')}",
+    "message": f"Upload {repo_file} {last_traded_date}",
     "content": encoded_content,
     "branch": branch
 }
