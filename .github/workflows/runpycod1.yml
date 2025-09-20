@@ -1,37 +1,38 @@
-name: Run Nepse Script
+# name: Run Nepse Script
 
-on:
-  schedule:
-    - cron: "0 9 * * *"   # Every day at 9:00 UTC
-  workflow_dispatch:       # Allow manual run
-  push:
-    branches:
-      - main
+# on:
+#   schedule:
+#     - cron: "0 9 * * *"   # Every day at 9:00 UTC
+#   workflow_dispatch:       # Allow manual run
+#   push:
+#     branches:
+#       - main
 
-jobs:
-  run-python:
-    runs-on: ubuntu-latest
+# jobs:
+#   run-python:
+#     runs-on: ubuntu-latest
 
-    # 👇 Needed so the GITHUB_TOKEN can write to your repo
-    permissions:
-      contents: write
+#     # 👇 Needed so the GITHUB_TOKEN can write to your repo
+#     permissions:
+#       contents: write
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
+#       - name: Set up Python
+#         uses: actions/setup-python@v4
+#         with:
+#           python-version: "3.10"
 
-      - name: Install dependencies
-        run: pip install --upgrade nepse-scraper pandas requests
+#       - name: Install dependencies
+#         run: pip install --upgrade nepse-scraper pandas requests
 
-      - name: Run Nepse Script
-        env:
-          # 👇 Pass GitHub Actions token to your script
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python delfile.py
+#       - name: Run Nepse Script
+#         env:
+#           # 👇 Pass GitHub Actions token to your script
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#         run: python delfile.py
+
 
 
