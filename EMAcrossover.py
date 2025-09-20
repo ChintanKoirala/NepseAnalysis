@@ -347,20 +347,24 @@ import os
 import sys
 import base64
 import requests
-from datetime import datetime
+import glob
 
 # -------------------- Config --------------------
 repo = "ChintanKoirala/NepseAnalysis"
 branch = "main"
 
-# Use last traded date instead of system today
-# (Assume signals_<last_traded_date>.csv already exists locally from the scraper pipeline)
-# For fallback, still use today's date if no specific traded date known
-last_traded_date = datetime.today().strftime('%Y-%m-%d')
+# -------------------- Find the latest signals file --------------------
+signal_files = sorted(glob.glob("signals_*.csv"), reverse=True)
+if not signal_files:
+    print("❌ No signals_*.csv file found locally. Exiting.")
+    sys.exit(1)
 
-local_file = f"signals_{last_traded_date}.csv"
+local_file = signal_files[0]  # latest file
+last_traded_date = local_file.replace("signals_", "").replace(".csv", "")
 repo_file = f"daily_data/signals_{last_traded_date}.csv"
 upload_url = f"https://api.github.com/repos/{repo}/contents/{repo_file}"
+
+print(f"✅ Latest local signals file detected: {local_file}")
 
 # -------------------- Get GitHub Token --------------------
 token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
@@ -374,11 +378,6 @@ headers = {
     "Authorization": f"Bearer {token}",
     "Accept": "application/vnd.github.v3+json"
 }
-
-# -------------------- Check local file --------------------
-if not os.path.exists(local_file):
-    print(f"⚠️ Local file '{local_file}' does not exist. Exiting.")
-    sys.exit(1)
 
 # -------------------- Read & encode file --------------------
 try:
@@ -407,7 +406,7 @@ except Exception as e:
 
 # -------------------- Upload / Update --------------------
 payload = {
-    "message": f"Upload {repo_file} {last_traded_date}",
+    "message": f"Upload {repo_file} ({last_traded_date})",
     "content": encoded_content,
     "branch": branch
 }
@@ -423,7 +422,6 @@ try:
         print(response.json())
 except Exception as e:
     print(f"❌ Exception during upload: {e}")
-
 
 
 
