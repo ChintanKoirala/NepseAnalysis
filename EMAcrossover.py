@@ -183,7 +183,6 @@ if not df_today.empty and LATEST_URL:
 
 
 # EMA cross calculation and signal generation
-# -------------------- Install nepse_scraper if missing --------------------
 try:
     from nepse_scraper import Nepse_scraper
 except ModuleNotFoundError:
@@ -284,8 +283,8 @@ if not df_today.empty and LATEST_URL:
         # Sort descending
         df_combined.sort_values(by='Date', ascending=False, inplace=True)
 
-        # Keep only latest MAX_DAYS unique dates
-        recent_dates = df_combined['Date'].dropna().unique()[:MAX_DAYS]
+        # Keep only latest MAX_DAYS unique dates (sorted)
+        recent_dates = sorted(df_combined['Date'].dropna().unique(), reverse=True)[:MAX_DAYS]
         df_combined = df_combined[df_combined['Date'].isin(recent_dates)]
 
         # Ensure Date formatted back to string
@@ -302,15 +301,20 @@ if not df_today.empty and LATEST_URL:
             last_close = group_sorted.iloc[0]['Close']
             prev_close = group_sorted.iloc[1]['Close']
             last_vol = group_sorted.iloc[0]['Volume']
-            avg_vol = group_sorted['Volume'].mean()
+            avg_vol_2days = group_sorted['Volume'].mean()  # average of last 2 days
 
             ma1 = last_close  # 1-day MA
             ma2 = (last_close + prev_close) / 2  # 2-day MA
 
-            if ma1 > ma2:  # bullish crossover
-                remark = "Strong Buy" if last_vol > avg_vol else "Buy"
-            elif ma2 > ma1:  # bearish crossover
-                remark = "Strong Sell" if last_vol < avg_vol else "Sell"
+            # --- Updated Signal Logic ---
+            if ma1 > ma2 and last_vol > avg_vol_2days:
+                remark = "Strong Buy"
+            elif ma1 > ma2 and last_vol < avg_vol_2days:
+                remark = "Buy"
+            elif ma2 > ma1 and last_vol > avg_vol_2days:
+                remark = "Strong Sell"
+            elif ma2 > ma1 and last_vol < avg_vol_2days:
+                remark = "Sell"
             else:
                 remark = ""
 
@@ -321,6 +325,7 @@ if not df_today.empty and LATEST_URL:
 
         # Save combined file
         df_combined.to_csv("combined_nepse.csv", index=False)
+        df_combined.to_csv(f"combined_nepse_{today_date}.csv", index=False)
         print(f"✅ Combined CSV updated with signals (last {MAX_DAYS} days kept)")
 
         # -------------------- Save ONLY Last Traded Day Signals with Serial No --------------------
@@ -338,7 +343,6 @@ if not df_today.empty and LATEST_URL:
 
     except Exception as e:
         print(f"⚠️ Failed to merge with GitHub CSV: {e}")
-
 
 
 
