@@ -3,7 +3,7 @@ name: Run Nepse Script
 
 on:
   schedule:
-    - cron: "0 9 * * *"   # Every day at 9:00 UTC
+    - cron: "30 9 * * *"   # Every day at 9:00 UTC
   workflow_dispatch:       # Allow manual run
   push:
     branches:
