@@ -296,13 +296,11 @@ if not df_today.empty and LATEST_URL:
             rsi = 100 - (100 / (1 + rs))
             return round(rsi, 2)
 
-        # Signal order for final CSV
         signal_order = [
-            "Very Very Strong Buy", "Very Strong Buy", "Strong Buy", "Buy",
-            "Very Very Strong Sell", "Very Strong Sell", "Strong Sell", "Sell"
+            "Very Strong Buy", "Strong Buy", "Buy",
+            "Very Strong Sell", "Strong Sell", "Sell"
         ]
 
-        # Calculate indicators and initial remarks
         for symbol, group in df_combined.groupby("Symbol"):
             group_sorted = group.sort_values(by="Date", ascending=False).head(5)
             if len(group_sorted) < 5:
@@ -311,7 +309,7 @@ if not df_today.empty and LATEST_URL:
             ma1 = group_sorted['Close'].head(2).mean()   # 2-day MA
             ma2 = group_sorted['Close'].head(5).mean()   # 5-day MA
             last_vol = group_sorted.iloc[0]['Volume']
-            avg_vol_5days = int(group_sorted['Volume'].head(5).mean())
+            avg_vol_5days = int(group_sorted['Volume'].head(5).mean())  # integer part only
             rsi_5 = calculate_rsi(group_sorted['Close'])
 
             df_combined.loc[df_combined['Symbol'] == symbol, 'RSI_5'] = rsi_5
@@ -352,35 +350,36 @@ if not df_today.empty and LATEST_URL:
 
         def is_crossover(row, df):
             symbol = row['Symbol']
-            group = df[df['Symbol'] == symbol].sort_values(by='Date', ascending=False).head(5)
-            if len(group) < 5:
+            group = df[df['Symbol'] == symbol].sort_values(by='Date', ascending=False).head(2)
+            if len(group) < 2:
                 return False
-            ma1_prev = group['Close'].head(2).iloc[1]   # yesterday's 2-day MA (second day)
-            ma2_prev = group['Close'].head(5).iloc[1:6].mean()  # yesterday's 5-day MA
-            ma1_today = group['Close'].head(2).mean()
+            ma1_prev = group['Close'].iloc[1]
+            ma2_prev = group['Close'].head(5).mean()
+            ma1_today = row['Close']
             ma2_today = group['Close'].head(5).mean()
             return (ma1_prev <= ma2_prev and ma1_today > ma2_today) or (ma1_prev >= ma2_prev and ma1_today < ma2_today)
 
         crossover_signals = last_signals[last_signals.apply(lambda row: is_crossover(row, df_combined), axis=1)]
 
         if not crossover_signals.empty:
-            # Update remarks for very high volume
+            # Update remarks based on very high volume condition
             for idx, row in crossover_signals.iterrows():
                 if row['Remarks'] == "Very Strong Buy" and row['Volume'] > 1.30 * row['Avg_Vol_5D']:
                     crossover_signals.at[idx, 'Remarks'] = "Very Very Strong Buy"
                 elif row['Remarks'] == "Very Strong Sell" and row['Volume'] > 1.30 * row['Avg_Vol_5D']:
                     crossover_signals.at[idx, 'Remarks'] = "Very Very Strong Sell"
 
-            # Order by defined signal pattern
+            # Order by signal strength
             crossover_signals['Signal_Order'] = crossover_signals['Remarks'].apply(
                 lambda x: signal_order.index(x) if x in signal_order else 0
             )
             crossover_signals.sort_values(by='Signal_Order', ascending=True, inplace=True)
             crossover_signals.drop(columns=['Signal_Order'], inplace=True)
 
+            # Do NOT add S.N. column
             signals_file = f"signals_{today_date}.csv"
             crossover_signals.to_csv(signals_file, index=False)
-            print(f"📊 MA crossover signals saved in '{signals_file}' with ordered remarks")
+            print(f"📊 MA crossover signals saved without S.N. in '{signals_file}'")
         else:
             print("\nℹ️ No MA crossover signals for last traded day.")
 
