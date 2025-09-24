@@ -431,20 +431,31 @@ if not df_today.empty and LATEST_URL:
         df_combined.to_csv(f"combined_nepse_{today_date}.csv", index=False)
         print(f"✅ Combined CSV updated with signals (last {MAX_DAYS} days kept)")
 
-        # -------------------- Save LAST TRADING DAY SIGNALS (MA CROSS ONLY) --------------------
-        df_last_signals = df_combined[(df_combined['Date'] == today_date) & 
-                                      (df_combined['Remarks'].isin([
-                                          "Buy", "Strong Buy", "Very Strong Buy", 
-                                          "Sell", "Strong Sell", "Very Strong Sell"
-                                      ]))]
+        # -------------------- Save LAST TRADING DAY SIGNALS ORDERED --------------------
+        signal_order = [
+            "Very Strong Buy", "Strong Buy", "Buy",
+            "Very Strong Sell", "Strong Sell", "Sell"
+        ]
+
+        df_last_signals = df_combined[
+            (df_combined['Date'] == today_date) &
+            (df_combined['Remarks'].isin(signal_order))
+        ].copy()
+
         if not df_last_signals.empty:
+            # Order by signal strength
+            df_last_signals['Signal_Order'] = df_last_signals['Remarks'].apply(lambda x: signal_order.index(x))
+            df_last_signals.sort_values(by='Signal_Order', ascending=True, inplace=True)
+            df_last_signals.drop(columns=['Signal_Order'], inplace=True)
+
+            # Add serial numbers
             df_last_signals = df_last_signals.reset_index(drop=True)
-            df_last_signals.index += 1  # serial numbers start at 1
-            df_last_signals.index.name = "S.N."  # add column name
+            df_last_signals.index += 1
+            df_last_signals.index.name = "S.N."
 
             signals_file = f"signals_{today_date}.csv"
-            df_last_signals.to_csv(signals_file, index=True)  # index saved as serial number
-            print(f"📊 Signals for last traded day saved in '{signals_file}'")
+            df_last_signals.to_csv(signals_file, index=True)
+            print(f"📊 Signals for last traded day saved in '{signals_file}' (ordered by signal strength)")
         else:
             print("\nℹ️ No MA crossover signals for last traded day.")
 
