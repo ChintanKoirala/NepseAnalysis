@@ -183,6 +183,7 @@ if not df_today.empty and LATEST_URL:
 
 
 # EMA cross calculation and signal generation
+# -------------------- Install nepse_scraper if missing --------------------
 try:
     from nepse_scraper import Nepse_scraper
 except ModuleNotFoundError:
@@ -209,7 +210,8 @@ def get_latest_combined_url():
         resp.raise_for_status()
         files = resp.json()
         combined_files = [
-            f["name"] for f in files if f["name"].startswith("combined_nepse_") and f["name"].endswith(".csv")
+            f["name"] for f in files
+            if f["name"].startswith("combined_nepse_") and f["name"].endswith(".csv")
         ]
         if not combined_files:
             raise ValueError("No combined_nepse_*.csv file found in repo")
@@ -220,12 +222,14 @@ def get_latest_combined_url():
             match = re.search(r"combined_nepse_(\d{4}-\d{2}-\d{2})\.csv", fname)
             if match:
                 dates.append((match.group(1), fname))
+
         if not dates:
             raise ValueError("No valid dated combined_nepse file found")
 
         latest_date, latest_file = max(dates, key=lambda x: x[0])
         print(f"📂 Latest GitHub file found: {latest_file}")
         return f"{RAW_BASE}/{latest_file}"
+
     except Exception as e:
         print(f"⚠️ Failed to fetch latest combined file: {e}")
         return None
@@ -294,31 +298,33 @@ if not df_today.empty and LATEST_URL:
         df_combined['Remarks'] = ""
 
         for symbol, group in df_combined.groupby("Symbol"):
-            group_sorted = group.sort_values(by="Date", ascending=False).head(6)  # need up to 6 days
-            if len(group_sorted) < 6:
+            group_sorted = group.sort_values(by="Date", ascending=False).head(5)  # last 5 days
+            if len(group_sorted) < 5:
                 continue
 
-            last_vol = group_sorted.iloc[0]['Volume']
-            avg_vol_2days = group_sorted.head(2)['Volume'].mean()  # average of last 2 days
+            # Moving Averages
+            ma1 = group_sorted['Close'].head(2).mean()   # 2-day MA
+            ma2 = group_sorted['Close'].head(5).mean()   # 5-day MA
 
-            # --- New Moving Averages ---
-            ma1 = group_sorted.head(2)['Close'].mean()   # 2-day MA
-            ma2 = group_sorted.head(6)['Close'].mean()   # 6-day MA
+            # Volume comparison
+            last_vol = group_sorted.iloc[0]['Volume']
+            avg_vol_5days = group_sorted['Volume'].head(5).mean()
 
             # --- Updated Signal Logic ---
-            if ma1 > ma2 and last_vol > avg_vol_2days:
+            if ma1 > ma2 and last_vol > avg_vol_5days:
                 remark = "Strong Buy"
-            elif ma1 > ma2 and last_vol < avg_vol_2days:
+            elif ma1 > ma2 and last_vol < avg_vol_5days:
                 remark = "Buy"
-            elif ma2 > ma1 and last_vol > avg_vol_2days:
+            elif ma2 > ma1 and last_vol > avg_vol_5days:
                 remark = "Strong Sell"
-            elif ma2 > ma1 and last_vol < avg_vol_2days:
+            elif ma2 > ma1 and last_vol < avg_vol_5days:
                 remark = "Sell"
             else:
                 remark = ""
 
             df_combined.loc[
-                (df_combined['Symbol'] == symbol) & (df_combined['Date'] == group_sorted.iloc[0]['Date']),
+                (df_combined['Symbol'] == symbol) &
+                (df_combined['Date'] == group_sorted.iloc[0]['Date']),
                 'Remarks'
             ] = remark
 
