@@ -431,8 +431,12 @@ if not df_today.empty and LATEST_URL:
         df_combined.to_csv(f"combined_nepse_{today_date}.csv", index=False)
         print(f"✅ Combined CSV updated with signals (last {MAX_DAYS} days kept)")
 
-        # -------------------- Save ONLY Last Traded Day Signals with Serial No --------------------
-        df_last_signals = df_combined[(df_combined['Date'] == today_date) & (df_combined['Remarks'] != "")]
+        # -------------------- Save LAST TRADING DAY SIGNALS (MA CROSS ONLY) --------------------
+        df_last_signals = df_combined[(df_combined['Date'] == today_date) & 
+                                      (df_combined['Remarks'].isin([
+                                          "Buy", "Strong Buy", "Very Strong Buy", 
+                                          "Sell", "Strong Sell", "Very Strong Sell"
+                                      ]))]
         if not df_last_signals.empty:
             df_last_signals = df_last_signals.reset_index(drop=True)
             df_last_signals.index += 1  # serial numbers start at 1
@@ -442,11 +446,10 @@ if not df_today.empty and LATEST_URL:
             df_last_signals.to_csv(signals_file, index=True)  # index saved as serial number
             print(f"📊 Signals for last traded day saved in '{signals_file}'")
         else:
-            print("\nℹ️ No signals generated for last traded day.")
+            print("\nℹ️ No MA crossover signals for last traded day.")
 
     except Exception as e:
         print(f"⚠️ Failed to merge with GitHub CSV: {e}")
-
 
 
 # upload output files in github ripo
