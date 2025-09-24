@@ -346,32 +346,19 @@ else:
 if not df_today.empty and LATEST_URL:
     try:
         df_latest = pd.read_csv(LATEST_URL)
-
-        # Keep only expected columns
         df_latest = df_latest[[col for col in COLUMNS if col in df_latest.columns]]
-
-        # Combine new + old
         df_combined = pd.concat([df_latest, df_today], ignore_index=True)
-
-        # Drop duplicates (Symbol + Date unique)
         df_combined.drop_duplicates(subset=['Symbol', 'Date'], keep='last', inplace=True)
-
-        # Convert Date to datetime
         df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
-
-        # Sort descending
         df_combined.sort_values(by='Date', ascending=False, inplace=True)
-
-        # Keep only latest MAX_DAYS unique dates (sorted)
         recent_dates = sorted(df_combined['Date'].dropna().unique(), reverse=True)[:MAX_DAYS]
         df_combined = df_combined[df_combined['Date'].isin(recent_dates)]
-
-        # Ensure Date formatted back to string
         df_combined['Date'] = df_combined['Date'].dt.strftime('%Y-%m-%d')
 
         # -------------------- Indicator Calculation --------------------
         df_combined['Remarks'] = ""
-        df_combined['RSI_5'] = 0.0  # add column for 5-day RSI
+        df_combined['RSI_5'] = 0.0
+        df_combined['Avg_Vol_5D'] = 0.0
 
         def calculate_rsi(prices, period=5):
             if len(prices) < period:
@@ -385,24 +372,26 @@ if not df_today.empty and LATEST_URL:
                 return 100
             rs = avg_gain / avg_loss
             rsi = 100 - (100 / (1 + rs))
-            return round(rsi, 2)  # round RSI to 2 decimals
+            return round(rsi, 2)
+
+        signal_order = [
+            "Very Strong Buy", "Strong Buy", "Buy",
+            "Very Strong Sell", "Strong Sell", "Sell"
+        ]
 
         for symbol, group in df_combined.groupby("Symbol"):
-            group_sorted = group.sort_values(by="Date", ascending=False).head(5)  # last 5 days
+            group_sorted = group.sort_values(by="Date", ascending=False).head(5)
             if len(group_sorted) < 5:
                 continue
 
-            # Moving Averages
             ma1 = group_sorted['Close'].head(2).mean()   # 2-day MA
             ma2 = group_sorted['Close'].head(5).mean()   # 5-day MA
-
-            # Volume comparison
             last_vol = group_sorted.iloc[0]['Volume']
             avg_vol_5days = group_sorted['Volume'].head(5).mean()
-
-            # Calculate RSI
             rsi_5 = calculate_rsi(group_sorted['Close'])
+
             df_combined.loc[df_combined['Symbol'] == symbol, 'RSI_5'] = rsi_5
+            df_combined.loc[df_combined['Symbol'] == symbol, 'Avg_Vol_5D'] = round(avg_vol_5days, 2)
 
             # --- Signal Logic ---
             if ma1 > ma2 and last_vol > avg_vol_5days:
@@ -426,41 +415,45 @@ if not df_today.empty and LATEST_URL:
                 'Remarks'
             ] = remark
 
-        # Save combined file
+        # Save combined CSV
         df_combined.to_csv("combined_nepse.csv", index=False)
         df_combined.to_csv(f"combined_nepse_{today_date}.csv", index=False)
         print(f"✅ Combined CSV updated with signals (last {MAX_DAYS} days kept)")
 
-        # -------------------- Save LAST TRADING DAY SIGNALS ORDERED --------------------
-        signal_order = [
-            "Very Strong Buy", "Strong Buy", "Buy",
-            "Very Strong Sell", "Strong Sell", "Sell"
-        ]
-
-        df_last_signals = df_combined[
+        # -------------------- Save LAST TRADING DAY CROSSOVER SIGNALS --------------------
+        last_signals = df_combined[
             (df_combined['Date'] == today_date) &
             (df_combined['Remarks'].isin(signal_order))
         ].copy()
 
-        if not df_last_signals.empty:
-            # Order by signal strength
-            df_last_signals['Signal_Order'] = df_last_signals['Remarks'].apply(lambda x: signal_order.index(x))
-            df_last_signals.sort_values(by='Signal_Order', ascending=True, inplace=True)
-            df_last_signals.drop(columns=['Signal_Order'], inplace=True)
+        def is_crossover(row, df):
+            symbol = row['Symbol']
+            group = df[df['Symbol'] == symbol].sort_values(by='Date', ascending=False).head(2)
+            if len(group) < 2:
+                return False
+            ma1_prev = group['Close'].iloc[1]
+            ma2_prev = group['Close'].head(5).mean()
+            ma1_today = row['Close']
+            ma2_today = group['Close'].head(5).mean()
+            return (ma1_prev <= ma2_prev and ma1_today > ma2_today) or (ma1_prev >= ma2_prev and ma1_today < ma2_today)
 
-            # Add serial numbers
-            df_last_signals = df_last_signals.reset_index(drop=True)
-            df_last_signals.index += 1
-            df_last_signals.index.name = "S.N."
+        crossover_signals = last_signals[last_signals.apply(lambda row: is_crossover(row, df_combined), axis=1)]
 
+        if not crossover_signals.empty:
+            crossover_signals['Signal_Order'] = crossover_signals['Remarks'].apply(lambda x: signal_order.index(x))
+            crossover_signals.sort_values(by='Signal_Order', ascending=True, inplace=True)
+            crossover_signals.drop(columns=['Signal_Order'], inplace=True)
+            crossover_signals.index += 1
+            crossover_signals.index.name = "S.N."
             signals_file = f"signals_{today_date}.csv"
-            df_last_signals.to_csv(signals_file, index=True)
-            print(f"📊 Signals for last traded day saved in '{signals_file}' (ordered by signal strength)")
+            crossover_signals.to_csv(signals_file, index=True)
+            print(f"📊 MA crossover signals with 5-day avg volume saved in '{signals_file}'")
         else:
             print("\nℹ️ No MA crossover signals for last traded day.")
 
     except Exception as e:
         print(f"⚠️ Failed to merge with GitHub CSV: {e}")
+
 
 
 # upload output files in github ripo
