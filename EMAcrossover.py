@@ -297,8 +297,8 @@ if not df_today.empty and LATEST_URL:
             return round(rsi, 2)
 
         signal_order = [
-            "Very Strong Buy", "Strong Buy", "Buy",
-            "Very Strong Sell", "Strong Sell", "Sell"
+            "Very Very Strong Buy", "Very Strong Buy", "Strong Buy", "Buy",
+            "Very Very Strong Sell", "Very Strong Sell", "Strong Sell", "Sell"
         ]
 
         for symbol, group in df_combined.groupby("Symbol"):
@@ -369,9 +369,9 @@ if not df_today.empty and LATEST_URL:
                 elif row['Remarks'] == "Very Strong Sell" and row['Volume'] > 1.30 * row['Avg_Vol_5D']:
                     crossover_signals.at[idx, 'Remarks'] = "Very Very Strong Sell"
 
-            # Order by signal strength
+            # --- Custom Sorting by Buy/Sell priority ---
             crossover_signals['Signal_Order'] = crossover_signals['Remarks'].apply(
-                lambda x: signal_order.index(x) if x in signal_order else 0
+                lambda x: signal_order.index(x) if x in signal_order else 999
             )
             crossover_signals.sort_values(by='Signal_Order', ascending=True, inplace=True)
             crossover_signals.drop(columns=['Signal_Order'], inplace=True)
@@ -379,7 +379,7 @@ if not df_today.empty and LATEST_URL:
             # Do NOT add S.N. column
             signals_file = f"signals_{today_date}.csv"
             crossover_signals.to_csv(signals_file, index=False)
-            print(f"📊 MA crossover signals saved without S.N. in '{signals_file}'")
+            print(f"📊 MA crossover signals saved with custom buy/sell order in '{signals_file}'")
         else:
             print("\nℹ️ No MA crossover signals for last traded day.")
 
