@@ -294,17 +294,16 @@ if not df_today.empty and LATEST_URL:
         df_combined['Remarks'] = ""
 
         for symbol, group in df_combined.groupby("Symbol"):
-            group_sorted = group.sort_values(by="Date", ascending=False).head(2)  # last 2 days
-            if len(group_sorted) < 2:
+            group_sorted = group.sort_values(by="Date", ascending=False).head(6)  # need up to 6 days
+            if len(group_sorted) < 6:
                 continue
 
-            last_close = group_sorted.iloc[0]['Close']
-            prev_close = group_sorted.iloc[1]['Close']
             last_vol = group_sorted.iloc[0]['Volume']
-            avg_vol_2days = group_sorted['Volume'].mean()  # average of last 2 days
+            avg_vol_2days = group_sorted.head(2)['Volume'].mean()  # average of last 2 days
 
-            ma1 = last_close  # 1-day MA
-            ma2 = (last_close + prev_close) / 2  # 2-day MA
+            # --- New Moving Averages ---
+            ma1 = group_sorted.head(2)['Close'].mean()   # 2-day MA
+            ma2 = group_sorted.head(6)['Close'].mean()   # 6-day MA
 
             # --- Updated Signal Logic ---
             if ma1 > ma2 and last_vol > avg_vol_2days:
