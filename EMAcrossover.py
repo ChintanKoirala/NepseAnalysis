@@ -291,7 +291,6 @@ def get_latest_combined_url():
         if not combined_files:
             raise ValueError("No combined_nepse_*.csv file found in repo")
 
-        # Extract dates and find latest
         dates = []
         for fname in combined_files:
             match = re.search(r"combined_nepse_(\d{4}-\d{2}-\d{2})\.csv", fname)
@@ -335,7 +334,7 @@ df_today = pd.DataFrame(filtered_data, columns=COLUMNS)
 
 # -------------------- Save Today's File --------------------
 if not df_today.empty:
-    today_date = df_today['Date'].iloc[0]  # use NEPSE's last traded date
+    today_date = df_today['Date'].iloc[0]
     today_file = f"nepse_{today_date}.csv"
     df_today.to_csv(today_file, index=False)
     print(f"✅ Today's data saved as '{today_file}'")
@@ -358,7 +357,7 @@ if not df_today.empty and LATEST_URL:
         # -------------------- Indicator Calculation --------------------
         df_combined['Remarks'] = ""
         df_combined['RSI_5'] = 0.0
-        df_combined['Avg_Vol_5D'] = 0.0
+        df_combined['Avg_Vol_5D'] = 0
 
         def calculate_rsi(prices, period=5):
             if len(prices) < period:
@@ -387,11 +386,11 @@ if not df_today.empty and LATEST_URL:
             ma1 = group_sorted['Close'].head(2).mean()   # 2-day MA
             ma2 = group_sorted['Close'].head(5).mean()   # 5-day MA
             last_vol = group_sorted.iloc[0]['Volume']
-            avg_vol_5days = group_sorted['Volume'].head(5).mean()
+            avg_vol_5days = int(group_sorted['Volume'].head(5).mean())  # as integer
             rsi_5 = calculate_rsi(group_sorted['Close'])
 
             df_combined.loc[df_combined['Symbol'] == symbol, 'RSI_5'] = rsi_5
-            df_combined.loc[df_combined['Symbol'] == symbol, 'Avg_Vol_5D'] = round(avg_vol_5days, 2)
+            df_combined.loc[df_combined['Symbol'] == symbol, 'Avg_Vol_5D'] = avg_vol_5days
 
             # --- Signal Logic ---
             if ma1 > ma2 and last_vol > avg_vol_5days:
@@ -447,7 +446,7 @@ if not df_today.empty and LATEST_URL:
             crossover_signals.index.name = "S.N."
             signals_file = f"signals_{today_date}.csv"
             crossover_signals.to_csv(signals_file, index=True)
-            print(f"📊 MA crossover signals with 5-day avg volume saved in '{signals_file}'")
+            print(f"📊 MA crossover signals with Avg_Vol_5D as integer saved in '{signals_file}'")
         else:
             print("\nℹ️ No MA crossover signals for last traded day.")
 
