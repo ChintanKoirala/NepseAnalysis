@@ -439,10 +439,20 @@ if not df_today.empty and LATEST_URL:
         crossover_signals = last_signals[last_signals.apply(lambda row: is_crossover(row, df_combined), axis=1)]
 
         if not crossover_signals.empty:
+            # Update remarks based on very high volume condition
+            for idx, row in crossover_signals.iterrows():
+                if row['Remarks'] == "Very Strong Buy" and row['Volume'] > 1.30 * row['Avg_Vol_5D']:
+                    crossover_signals.at[idx, 'Remarks'] = "Very Very Strong Buy"
+                elif row['Remarks'] == "Very Strong Sell" and row['Volume'] > 1.30 * row['Avg_Vol_5D']:
+                    crossover_signals.at[idx, 'Remarks'] = "Very Very Strong Sell"
+
             # Order by signal strength
-            crossover_signals['Signal_Order'] = crossover_signals['Remarks'].apply(lambda x: signal_order.index(x))
+            crossover_signals['Signal_Order'] = crossover_signals['Remarks'].apply(
+                lambda x: signal_order.index(x) if x in signal_order else 0
+            )
             crossover_signals.sort_values(by='Signal_Order', ascending=True, inplace=True)
             crossover_signals.drop(columns=['Signal_Order'], inplace=True)
+
             # Do NOT add S.N. column
             signals_file = f"signals_{today_date}.csv"
             crossover_signals.to_csv(signals_file, index=False)
