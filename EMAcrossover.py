@@ -386,7 +386,7 @@ if not df_today.empty and LATEST_URL:
             ma1 = group_sorted['Close'].head(2).mean()   # 2-day MA
             ma2 = group_sorted['Close'].head(5).mean()   # 5-day MA
             last_vol = group_sorted.iloc[0]['Volume']
-            avg_vol_5days = int(group_sorted['Volume'].head(5).mean())  # as integer
+            avg_vol_5days = int(group_sorted['Volume'].head(5).mean())  # integer part only
             rsi_5 = calculate_rsi(group_sorted['Close'])
 
             df_combined.loc[df_combined['Symbol'] == symbol, 'RSI_5'] = rsi_5
@@ -452,6 +452,7 @@ if not df_today.empty and LATEST_URL:
 
     except Exception as e:
         print(f"⚠️ Failed to merge with GitHub CSV: {e}")
+
 
 
 
