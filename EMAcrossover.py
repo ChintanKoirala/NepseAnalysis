@@ -296,6 +296,21 @@ if not df_today.empty and LATEST_URL:
 
         # -------------------- Indicator Calculation --------------------
         df_combined['Remarks'] = ""
+        df_combined['RSI_5'] = 0  # add column for 5-day RSI
+
+        def calculate_rsi(prices, period=5):
+            if len(prices) < period:
+                return None
+            deltas = prices.diff()
+            gain = deltas.where(deltas > 0, 0)
+            loss = -deltas.where(deltas < 0, 0)
+            avg_gain = gain.rolling(window=period).mean().iloc[-1]
+            avg_loss = loss.rolling(window=period).mean().iloc[-1]
+            if avg_loss == 0:
+                return 100
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
 
         for symbol, group in df_combined.groupby("Symbol"):
             group_sorted = group.sort_values(by="Date", ascending=False).head(5)  # last 5 days
@@ -310,20 +325,28 @@ if not df_today.empty and LATEST_URL:
             last_vol = group_sorted.iloc[0]['Volume']
             avg_vol_5days = group_sorted['Volume'].head(5).mean()
 
-            # --- Updated Signal Logic ---
+            # Calculate RSI
+            rsi_5 = calculate_rsi(group_sorted['Close'])
+            df_combined.loc[df_combined['Symbol'] == symbol, 'RSI_5'] = rsi_5
+
+            # --- Signal Logic ---
             if ma1 > ma2 and last_vol > avg_vol_5days:
                 remark = "Strong Buy"
+                if rsi_5 is not None and 50 <= rsi_5 <= 75:
+                    remark = "Very Strong Buy"
             elif ma1 > ma2 and last_vol < avg_vol_5days:
                 remark = "Buy"
             elif ma2 > ma1 and last_vol > avg_vol_5days:
                 remark = "Strong Sell"
+                if rsi_5 is not None and 30 <= rsi_5 <= 49:
+                    remark = "Very Strong Sell"
             elif ma2 > ma1 and last_vol < avg_vol_5days:
                 remark = "Sell"
             else:
                 remark = ""
 
             df_combined.loc[
-                (df_combined['Symbol'] == symbol) &
+                (df_combined['Symbol'] == symbol) & 
                 (df_combined['Date'] == group_sorted.iloc[0]['Date']),
                 'Remarks'
             ] = remark
@@ -348,8 +371,6 @@ if not df_today.empty and LATEST_URL:
 
     except Exception as e:
         print(f"⚠️ Failed to merge with GitHub CSV: {e}")
-
-
 
 # upload output files in github ripo
 import os
