@@ -439,20 +439,19 @@ if not df_today.empty and LATEST_URL:
         crossover_signals = last_signals[last_signals.apply(lambda row: is_crossover(row, df_combined), axis=1)]
 
         if not crossover_signals.empty:
+            # Order by signal strength
             crossover_signals['Signal_Order'] = crossover_signals['Remarks'].apply(lambda x: signal_order.index(x))
             crossover_signals.sort_values(by='Signal_Order', ascending=True, inplace=True)
             crossover_signals.drop(columns=['Signal_Order'], inplace=True)
-            crossover_signals.index += 1
-            crossover_signals.index.name = "S.N."
+            # Do NOT add S.N. column
             signals_file = f"signals_{today_date}.csv"
-            crossover_signals.to_csv(signals_file, index=True)
-            print(f"📊 MA crossover signals with Avg_Vol_5D as integer saved in '{signals_file}'")
+            crossover_signals.to_csv(signals_file, index=False)
+            print(f"📊 MA crossover signals saved without S.N. in '{signals_file}'")
         else:
             print("\nℹ️ No MA crossover signals for last traded day.")
 
     except Exception as e:
         print(f"⚠️ Failed to merge with GitHub CSV: {e}")
-
 
 
 
