@@ -687,23 +687,34 @@ import sys
 import base64
 import requests
 import glob
+from datetime import datetime
 
 # -------------------- GitHub Config --------------------
 repo = "ChintanKoirala/NepseAnalysis"
 branch = "main"
 
-# -------------------- Detect latest filtered signals file --------------------
-signal_files = sorted(glob.glob("filtered_nepse_signals_*.csv"), reverse=True)
-if not signal_files:
-    print("❌ No filtered_nepse_signals_*.csv file found locally. Exiting.")
-    sys.exit(1)
+# -------------------- Detect filtered signals file --------------------
+local_file = None
+last_traded_date = None
 
-local_file = signal_files[0]  # pick the latest file
-last_traded_date = local_file.replace("filtered_nepse_signals_", "").replace(".csv", "")
+# 1️⃣ Try to find dated file first (preferred)
+signal_files = sorted(glob.glob("filtered_nepse_signals_*.csv"), reverse=True)
+if signal_files:
+    local_file = signal_files[0]
+    last_traded_date = local_file.replace("filtered_nepse_signals_", "").replace(".csv", "")
+else:
+    # 2️⃣ If not found, fallback to undated file
+    if os.path.exists("filtered_nepse_signals.csv"):
+        local_file = "filtered_nepse_signals.csv"
+        last_traded_date = datetime.now().strftime("%Y-%m-%d")
+    else:
+        print("❌ No filtered_nepse_signals file found locally. Exiting.")
+        sys.exit(1)
+
 repo_file = f"daily_data/filtered_nepse_signals_{last_traded_date}.csv"
 upload_url = f"https://api.github.com/repos/{repo}/contents/{repo_file}"
 
-print(f"✅ Found latest filtered signals file: {local_file}")
+print(f"✅ Found filtered signals file: {local_file}")
 
 # -------------------- GitHub Token --------------------
 token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
@@ -761,6 +772,7 @@ try:
         print(response.json())
 except Exception as e:
     print(f"❌ Exception during upload: {e}")
+
 
 
 
