@@ -1,5 +1,6 @@
 
 
+
 # this code calculates 9 days average vol and 3 day and 9 day moving average 
 
 
