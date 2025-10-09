@@ -136,11 +136,13 @@ if not df_today.empty and LATEST_URL:
         df_final.index.name = 'S.N.'
 
         # -------------------- Save Final Output --------------------
-        df_final.to_csv("filtered_nepse_signals.csv", index=True)
-        print("✅ File 'filtered_nepse_signals.csv' saved successfully (no filtering criteria applied).")
+        df_final.to_csv("completedata.csv", index=True)
+        print("✅ File 'completedata.csv' saved successfully (no filtering criteria applied).")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
+
+
 
 
 # upload in github
@@ -158,25 +160,25 @@ import shutil
 REPO = "ChintanKoirala/NepseAnalysis"
 BRANCH = "main"
 UPLOAD_FOLDER = "daily_data"
-LOCAL_FILE = "filtered_nepse_signals.csv"
+LOCAL_FILE = "completedata.csv"  # Updated output file
 
 # -------------------- Verify Local File --------------------
 if not os.path.exists(LOCAL_FILE):
-    print("❌ Output file 'filtered_nepse_signals.csv' not found. Please run the NEPSE data script first.")
+    print(f"❌ Output file '{LOCAL_FILE}' not found. Please run the NEPSE data script first.")
     sys.exit(1)
 
-# Get today's date (last traded date)
+# Get today's date
 today_date = datetime.now().strftime("%Y-%m-%d")
-dated_filename = f"filtered_nepse_signals_{today_date}.csv"
+dated_filename = f"completedata_{today_date}.csv"
 
-# Create a dated copy (keep original)
+# Create a dated copy to preserve original
 shutil.copy(LOCAL_FILE, dated_filename)
 print(f"✅ Copied local file to '{dated_filename}' for upload.")
 
 # -------------------- GitHub Token --------------------
 token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_PAT")
 if not token:
-    print("❌ GitHub token not found. Please set GITHUB_TOKEN (for Actions) or GH_PAT (for local).")
+    print("❌ GitHub token not found. Please set GITHUB_TOKEN or GH_PAT.")
     sys.exit(1)
 else:
     print("✅ GitHub token loaded successfully.")
@@ -216,7 +218,7 @@ except Exception as e:
 
 # -------------------- Upload to GitHub --------------------
 payload = {
-    "message": f"Upload filtered NEPSE signals file for {today_date}",
+    "message": f"Upload completedata file for {today_date}",
     "content": encoded_content,
     "branch": BRANCH
 }
@@ -232,6 +234,5 @@ try:
         print(upload_resp.text)
 except Exception as e:
     print(f"❌ Exception during upload: {e}")
-
 
 
