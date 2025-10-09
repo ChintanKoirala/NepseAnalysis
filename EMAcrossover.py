@@ -276,23 +276,33 @@ if not df_today.empty and LATEST_URL:
 
         # -------------------- Calculate Averages, RSI, and Remarks --------------------
         result_list = []
+        N = 9  # RSI period (9)
         for symbol, group in df_combined.groupby('Symbol'):
             group = group.copy()
             group['Avg_Vol_9D'] = group['Volume'].rolling(window=9).mean()
             group['MA_3D'] = group['Close'].rolling(window=3).mean()
             group['MA_9D'] = group['Close'].rolling(window=9).mean()
 
-            # Only calculate RSI if at least 9 days exist
-            if len(group) >= 9:
-                last_9 = group['Close'].iloc[-9:]
-                delta = last_9.diff().dropna()
-                gain = delta.clip(lower=0).mean()
-                loss = -delta.clip(upper=0).mean()
-                if loss == 0:
-                    rsi = 100
+            # Only calculate RSI if at least 10 closes exist (for 9 deltas)
+            if len(group) >= (N + 1):
+                closes_for_rsi = group['Close'].iloc[-(N + 1):].reset_index(drop=True)
+                delta = closes_for_rsi.diff().dropna()
+
+                gain = delta.clip(lower=0)
+                loss = -delta.clip(upper=0)
+
+                avg_gain = gain.mean()
+                avg_loss = loss.mean()
+
+                # Handle edge cases
+                if avg_gain == 0 and avg_loss == 0:
+                    rsi = 50.0
+                elif avg_loss == 0:
+                    rsi = 100.0
                 else:
-                    rs = gain / loss
+                    rs = avg_gain / avg_loss
                     rsi = 100 - (100 / (1 + rs))
+
                 group['RSI_9D'] = None
                 group.iloc[-1, group.columns.get_loc('RSI_9D')] = round(rsi, 2)
 
@@ -308,8 +318,14 @@ if not df_today.empty and LATEST_URL:
 
                 result_list.append(group.iloc[[-1]])  # Keep only last traded day
 
-        # Combine only symbols with >=9 days
-        df_lastday = pd.concat(result_list, ignore_index=True)
+        # Combine only symbols with >=10 closes
+        if result_list:
+            df_lastday = pd.concat(result_list, ignore_index=True)
+        else:
+            df_lastday = pd.DataFrame(columns=[
+                'Symbol', 'Date', 'Open', 'Close', 'Volume',
+                'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_9D', 'Remarks'
+            ])
 
         # -------------------- Filtering Criteria --------------------
         df_filtered = df_lastday[
@@ -382,6 +398,7 @@ if not df_today.empty and LATEST_URL:
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
+
 
 
 
