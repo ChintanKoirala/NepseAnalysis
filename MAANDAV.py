@@ -6,7 +6,7 @@
 
 try:
     from nepse_scraper import Nepse_scraper
-except ModuleNotFoundError:
+except ModuleNotFoundError: 
     import sys, subprocess
     subprocess.check_call([sys.executable, "-m", "pip", "install", "nepse-scraper"])
     from nepse_scraper import Nepse_scraper
