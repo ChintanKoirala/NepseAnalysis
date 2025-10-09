@@ -95,33 +95,45 @@ if not df_today.empty and LATEST_URL:
         df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
 
         # -------------------- Calculate Averages and RSI --------------------
+        N = 9  # RSI period
         result_list = []
+
         for symbol, group in df_combined.groupby('Symbol'):
             group = group.copy()
             group['Avg_Vol_9D'] = group['Volume'].rolling(window=9).mean()
             group['MA_3D'] = group['Close'].rolling(window=3).mean()
             group['MA_9D'] = group['Close'].rolling(window=9).mean()
 
-            # Calculate RSI for last traded day from last 9 traded days
-            if len(group) >= 9:
-                last_9 = group['Close'].iloc[-9:]
-                delta = last_9.diff().dropna()
-                gain = delta.clip(lower=0).mean()
-                loss = -delta.clip(upper=0).mean()
-                if loss == 0:
-                    rsi = 100
+            # Calculate RSI for last traded day from last 10 closing prices (9 deltas)
+            if len(group) >= N + 1:
+                closes = pd.to_numeric(group['Close'].iloc[-(N+1):], errors='coerce')
+                delta = closes.diff().dropna()
+
+                gains = delta.clip(lower=0)
+                losses = -delta.clip(upper=0)
+
+                avg_gain = gains.sum() / N
+                avg_loss = losses.sum() / N
+
+                if avg_loss == 0:
+                    rsi = 100.0
                 else:
-                    rs = gain / loss
+                    rs = avg_gain / avg_loss
                     rsi = 100 - (100 / (1 + rs))
-                group['RSI_9D'] = None
+
+                group['RSI_9D'] = float('nan')
                 group.iloc[-1, group.columns.get_loc('RSI_9D')] = round(rsi, 2)
                 result_list.append(group.iloc[[-1]])  # Keep only last traded day
 
-        # Combine only symbols with >=9 days (omit others)
-        df_lastday = pd.concat(result_list, ignore_index=True)
+        # Combine only symbols with >=10 days (omit others)
+        if result_list:
+            df_lastday = pd.concat(result_list, ignore_index=True)
+        else:
+            df_lastday = pd.DataFrame(columns=['Symbol', 'Date', 'Open', 'Close', 'Volume',
+                                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_9D'])
 
         # -------------------- Final Formatting --------------------
-        df_lastday['Date'] = df_lastday['Date'].dt.strftime('%Y-%m-%d')
+        df_lastday['Date'] = pd.to_datetime(df_lastday['Date']).dt.strftime('%Y-%m-%d')
         df_lastday['Avg_Vol_9D'] = df_lastday['Avg_Vol_9D'].fillna(0).astype(int)
         df_lastday['MA_3D'] = df_lastday['MA_3D'].round(2)
         df_lastday['MA_9D'] = df_lastday['MA_9D'].round(2)
@@ -137,11 +149,10 @@ if not df_today.empty and LATEST_URL:
 
         # -------------------- Save Final Output --------------------
         df_final.to_csv("completedata.csv", index=True)
-        print("✅ File 'completedata.csv' saved successfully (no filtering criteria applied).")
+        print("✅ File 'completedata.csv' saved successfully with correct RSI(9) calculation.")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
-
 
 
 
