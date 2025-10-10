@@ -183,7 +183,6 @@ if not df_today.empty and LATEST_URL:
 # EMA cross calculation and signal generation
 
 
-
 try:
     from nepse_scraper import Nepse_scraper
 except ModuleNotFoundError:
@@ -193,6 +192,7 @@ except ModuleNotFoundError:
 
 # -------------------- Imports --------------------
 import pandas as pd
+import numpy as np
 import requests
 import re
 from datetime import datetime
@@ -260,6 +260,55 @@ if not df_today.empty:
 else:
     print("⚠️ No data available for today.")
 
+# -------------------- Helper: Wilder-smoothed RSI --------------------
+def calculate_rsi_wilder(prices, period=9):
+    """
+    Returns a pandas Series of RSI values using Wilder's smoothing.
+    RSI values will start appearing at index `period` (0-based).
+    If there are fewer than period+1 prices, returns a series of NaNs.
+    """
+    prices = pd.Series(prices).astype(float).reset_index(drop=True)
+    length = len(prices)
+    rsi = pd.Series([np.nan] * length)
+
+    if length < (period + 1):
+        return rsi
+
+    deltas = prices.diff()
+    gains = deltas.clip(lower=0)
+    losses = -deltas.clip(upper=0)
+
+    # first average (simple mean of first `period` deltas: indices 1..period)
+    avg_gain = gains.iloc[1:period+1].mean()
+    avg_loss = losses.iloc[1:period+1].mean()
+
+    # first RSI value at position `period`
+    if avg_gain == 0 and avg_loss == 0:
+        rsi.iloc[period] = 50.0
+    elif avg_loss == 0:
+        rsi.iloc[period] = 100.0
+    else:
+        rs = avg_gain / avg_loss
+        rsi.iloc[period] = 100 - (100 / (1 + rs))
+
+    # Wilder smoothing for subsequent values
+    for i in range(period + 1, length):
+        gain = gains.iloc[i]
+        loss = losses.iloc[i]
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+
+        if avg_gain == 0 and avg_loss == 0:
+            rsi_val = 50.0
+        elif avg_loss == 0:
+            rsi_val = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi_val = 100 - (100 / (1 + rs))
+        rsi.iloc[i] = rsi_val
+
+    return rsi
+
 # -------------------- Merge with Latest GitHub CSV --------------------
 if not df_today.empty and LATEST_URL:
     try:
@@ -276,25 +325,23 @@ if not df_today.empty and LATEST_URL:
 
         # -------------------- Calculate Averages, RSI, and Remarks --------------------
         result_list = []
+        N = 9  # RSI period (9)
         for symbol, group in df_combined.groupby('Symbol'):
             group = group.copy()
             group['Avg_Vol_9D'] = group['Volume'].rolling(window=9).mean()
             group['MA_3D'] = group['Close'].rolling(window=3).mean()
             group['MA_9D'] = group['Close'].rolling(window=9).mean()
 
-            # Only calculate RSI if at least 9 days exist
-            if len(group) >= 9:
-                last_9 = group['Close'].iloc[-9:]
-                delta = last_9.diff().dropna()
-                gain = delta.clip(lower=0).mean()
-                loss = -delta.clip(upper=0).mean()
-                if loss == 0:
-                    rsi = 100
-                else:
-                    rs = gain / loss
-                    rsi = 100 - (100 / (1 + rs))
-                group['RSI_9D'] = None
-                group.iloc[-1, group.columns.get_loc('RSI_9D')] = round(rsi, 2)
+            # Only calculate RSI if at least N+1 closes exist (need N deltas)
+            if len(group) >= (N + 1):
+                # compute RSI series using Wilder smoothing
+                rsi_series = calculate_rsi_wilder(group['Close'].values, period=N)
+
+                # create RSI_9D column and set last value
+                group['RSI_9D'] = np.nan
+                last_rsi = rsi_series.iloc[-1]
+                if not np.isnan(last_rsi):
+                    group.iloc[-1, group.columns.get_loc('RSI_9D')] = round(float(last_rsi), 2)
 
                 # Calculate Vol_Ratio
                 group['Vol_Ratio'] = group['Volume'] / group['Avg_Vol_9D']
@@ -308,8 +355,14 @@ if not df_today.empty and LATEST_URL:
 
                 result_list.append(group.iloc[[-1]])  # Keep only last traded day
 
-        # Combine only symbols with >=9 days
-        df_lastday = pd.concat(result_list, ignore_index=True)
+        # Combine only symbols with >=N+1 days
+        if result_list:
+            df_lastday = pd.concat(result_list, ignore_index=True)
+        else:
+            df_lastday = pd.DataFrame(columns=[
+                'Symbol', 'Date', 'Open', 'Close', 'Volume',
+                'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_9D', 'Remarks'
+            ])
 
         # -------------------- Filtering Criteria --------------------
         df_filtered = df_lastday[
