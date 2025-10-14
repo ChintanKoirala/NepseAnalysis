@@ -2,7 +2,6 @@
 
 
 # this code calculates 9 days average vol  and 9 day moving average 
-
 try:
     from nepse_scraper import Nepse_scraper
 except ModuleNotFoundError:
@@ -23,15 +22,17 @@ COLUMNS = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
 REPO_URL = "https://api.github.com/repos/ChintanKoirala/NepseAnalysis/contents/daily_data"
 RAW_BASE = "https://raw.githubusercontent.com/ChintanKoirala/NepseAnalysis/main/daily_data"
 
+# -------------------- Helper: clean numeric --------------------
+def clean_numeric(series):
+    return pd.to_numeric(series.astype(str).str.replace(',', '').str.strip(), errors='coerce')
+
 # -------------------- Find Latest combined_nepse File --------------------
 def get_latest_combined_url():
     try:
         resp = requests.get(REPO_URL)
         resp.raise_for_status()
         files = resp.json()
-        combined_files = [
-            f["name"] for f in files if f["name"].startswith("combined_nepse_") and f["name"].endswith(".csv")
-        ]
+        combined_files = [f["name"] for f in files if f["name"].startswith("combined_nepse_") and f["name"].endswith(".csv")]
         if not combined_files:
             raise ValueError("No combined_nepse_*.csv file found in repo")
 
@@ -66,9 +67,9 @@ df_today = pd.DataFrame([{
         'Volume': item.get('totalTradedQuantity', 0)
     } for item in content], columns=COLUMNS)
 
-# Force numeric types for today's data
+# Clean numeric columns for today's data
 for col in ['Open', 'Close', 'Volume']:
-    df_today[col] = pd.to_numeric(df_today[col], errors='coerce')
+    df_today[col] = clean_numeric(df_today[col])
 
 if not df_today.empty:
     today_file = f"nepse_{datetime.now().strftime('%Y-%m-%d')}.csv"
@@ -80,38 +81,31 @@ else:
 # -------------------- Merge with Latest GitHub CSV --------------------
 if not df_today.empty and LATEST_URL:
     try:
-        # Read latest GitHub CSV via requests + StringIO
         resp = requests.get(LATEST_URL)
         resp.raise_for_status()
         df_latest = pd.read_csv(io.StringIO(resp.text), dtype=str)
         df_latest = df_latest[[col for col in COLUMNS if col in df_latest.columns]]
 
-        # Clean numeric columns
+        # Clean numeric columns for latest CSV
         for col in ['Open', 'Close', 'Volume']:
-            df_latest[col] = df_latest[col].str.replace(",", "").astype(float)
-            df_today[col] = pd.to_numeric(df_today[col], errors='coerce')
+            df_latest[col] = clean_numeric(df_latest[col])
+            df_today[col] = clean_numeric(df_today[col])
 
-        # Combine and drop duplicates
+        # Merge and drop duplicates
         df_combined = pd.concat([df_latest, df_today], ignore_index=True)
         df_combined.drop_duplicates(subset=['Symbol', 'Date'], keep='last', inplace=True)
 
         # Convert Date and sort
         df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
         df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
-
-        # Drop invalid Close values
         df_combined.dropna(subset=['Close'], inplace=True)
 
-        # -------------------- Calculate Averages and RSI(13D Wilder) --------------------
+        # -------------------- Calculate MA, AvgVol, RSI(13D Wilder) --------------------
         N = 13
         result_list = []
 
         for symbol, group in df_combined.groupby('Symbol'):
-            group = group.copy()
-            group.sort_values(by='Date', inplace=True)
-            group.reset_index(drop=True, inplace=True)
-
-            # Rolling averages
+            group = group.copy().sort_values(by='Date').reset_index(drop=True)
             group['Avg_Vol_13D'] = group['Volume'].rolling(window=N, min_periods=1).mean()
             group['MA_3D'] = group['Close'].rolling(window=3, min_periods=1).mean()
             group['MA_13D'] = group['Close'].rolling(window=N, min_periods=1).mean()
@@ -119,7 +113,7 @@ if not df_today.empty and LATEST_URL:
             if len(group) < N + 1:
                 continue
 
-            closes = group['Close']
+            closes = group['Close'].astype(float).reset_index(drop=True)
             deltas = closes.diff()
             gains = deltas.clip(lower=0)
             losses = -deltas.clip(upper=0)
@@ -130,11 +124,9 @@ if not df_today.empty and LATEST_URL:
 
             rsi_values = [None] * len(closes)
 
-            # Wilder smoothing
             for i in range(N + 1, len(closes)):
                 current_gain = gains.iloc[i]
                 current_loss = losses.iloc[i]
-
                 avg_gain = ((avg_gain * (N - 1)) + current_gain) / N
                 avg_loss = ((avg_loss * (N - 1)) + current_loss) / N
 
@@ -149,7 +141,6 @@ if not df_today.empty and LATEST_URL:
                 rsi_values[i] = rsi
 
             group['RSI_13D'] = pd.Series(rsi_values, index=group.index)
-
             result_list.append(group.iloc[[-1]])
 
         if result_list:
@@ -179,8 +170,8 @@ if not df_today.empty and LATEST_URL:
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
 
-# upload in github
 
+# upload in github
 
 
 import os
