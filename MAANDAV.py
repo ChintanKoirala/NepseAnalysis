@@ -16,6 +16,8 @@ import requests
 import re
 from datetime import datetime
 
+pd.options.mode.chained_assignment = None  # disable pandas warnings
+
 # -------------------- Config --------------------
 COLUMNS = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
 REPO_URL = "https://api.github.com/repos/ChintanKoirala/NepseAnalysis/contents/daily_data"
@@ -93,6 +95,13 @@ if not df_today.empty and LATEST_URL:
         df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
         df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
 
+        # 🔧 Force numeric type globally
+        for col in ['Open', 'Close', 'Volume']:
+            df_combined[col] = pd.to_numeric(df_combined[col], errors='coerce')
+
+        # Drop any rows missing Close
+        df_combined.dropna(subset=['Close'], inplace=True)
+
         # -------------------- Calculate Averages and RSI(13D Wilder) --------------------
         N = 13  # RSI period
         result_list = []
@@ -101,52 +110,53 @@ if not df_today.empty and LATEST_URL:
             group = group.copy()
             group.sort_values(by='Date', inplace=True)
 
-            # 🔧 Force numeric type for Close & Volume
-            group['Close'] = pd.to_numeric(group['Close'], errors='coerce')
-            group['Volume'] = pd.to_numeric(group['Volume'], errors='coerce')
-            group['Open'] = pd.to_numeric(group['Open'], errors='coerce')
+            # ✅ Ensure numeric
+            for col in ['Open', 'Close', 'Volume']:
+                group[col] = pd.to_numeric(group[col], errors='coerce')
+
+            # Drop invalid rows
             group.dropna(subset=['Close'], inplace=True)
+            if len(group) < N + 1:
+                continue
 
-            group['Avg_Vol_13D'] = group['Volume'].rolling(window=N).mean()
-            group['MA_3D'] = group['Close'].rolling(window=3).mean()
-            group['MA_13D'] = group['Close'].rolling(window=N).mean()
+            # Rolling averages
+            group['Avg_Vol_13D'] = group['Volume'].rolling(window=N, min_periods=1).mean()
+            group['MA_3D'] = group['Close'].rolling(window=3, min_periods=1).mean()
+            group['MA_13D'] = group['Close'].rolling(window=N, min_periods=1).mean()
 
-            if len(group) >= N + 1:
-                closes = group['Close'].reset_index(drop=True)
-                deltas = closes.diff()
+            closes = group['Close'].reset_index(drop=True)
+            deltas = closes.diff()
+            gains = deltas.clip(lower=0)
+            losses = -deltas.clip(upper=0)
 
-                gains = deltas.clip(lower=0)
-                losses = -deltas.clip(upper=0)
+            # First averages
+            avg_gain = gains.iloc[1:N+1].mean()
+            avg_loss = losses.iloc[1:N+1].mean()
 
-                # First average gain/loss (simple average)
-                avg_gain = gains.iloc[1:N+1].mean()
-                avg_loss = losses.iloc[1:N+1].mean()
+            rsi_values = [None] * len(closes)
 
-                rsi_values = [None] * len(closes)
+            # Wilder's smoothing
+            for i in range(N + 1, len(closes)):
+                current_gain = gains.iloc[i]
+                current_loss = losses.iloc[i]
 
-                # Wilder’s smoothing
-                for i in range(N + 1, len(closes)):
-                    current_gain = gains.iloc[i]
-                    current_loss = losses.iloc[i]
+                avg_gain = ((avg_gain * (N - 1)) + current_gain) / N
+                avg_loss = ((avg_loss * (N - 1)) + current_loss) / N
 
-                    avg_gain = ((avg_gain * (N - 1)) + current_gain) / N
-                    avg_loss = ((avg_loss * (N - 1)) + current_loss) / N
+                if avg_loss == 0 and avg_gain == 0:
+                    rsi = 50.0
+                elif avg_loss == 0:
+                    rsi = 100.0
+                else:
+                    rs = avg_gain / avg_loss
+                    rsi = 100 - (100 / (1 + rs))
 
-                    if avg_loss == 0 and avg_gain == 0:
-                        rsi = 50.0
-                    elif avg_loss == 0:
-                        rsi = 100.0
-                    else:
-                        rs = avg_gain / avg_loss
-                        rsi = 100 - (100 / (1 + rs))
+                rsi_values[i] = rsi
 
-                    rsi_values[i] = rsi
+            group['RSI_13D'] = pd.Series(rsi_values, index=group.index)
 
-                group['RSI_13D'] = pd.Series(rsi_values, index=group.index)
-
-                # Keep only the last (latest) row
-                last_row = group.iloc[[-1]].copy()
-                result_list.append(last_row)
+            last_row = group.iloc[[-1]].copy()
+            result_list.append(last_row)
 
         # Combine all symbols' last rows
         if result_list:
