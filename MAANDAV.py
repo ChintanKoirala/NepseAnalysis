@@ -9,22 +9,17 @@ except ModuleNotFoundError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "nepse-scraper"])
     from nepse_scraper import Nepse_scraper
 
+# -------------------- Imports --------------------
 import pandas as pd
 import requests
-import io
 import re
 from datetime import datetime
-
-pd.options.mode.chained_assignment = None  # disable pandas warnings
 
 # -------------------- Config --------------------
 COLUMNS = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
 REPO_URL = "https://api.github.com/repos/ChintanKoirala/NepseAnalysis/contents/daily_data"
 RAW_BASE = "https://raw.githubusercontent.com/ChintanKoirala/NepseAnalysis/main/daily_data"
-
-# -------------------- Helper: clean numeric --------------------
-def clean_numeric(series):
-    return pd.to_numeric(series.astype(str).str.replace(',', '').str.strip(), errors='coerce')
+MAX_DAYS = 60  # Keep latest 60 trading days
 
 # -------------------- Find Latest combined_nepse File --------------------
 def get_latest_combined_url():
@@ -32,7 +27,9 @@ def get_latest_combined_url():
         resp = requests.get(REPO_URL)
         resp.raise_for_status()
         files = resp.json()
-        combined_files = [f["name"] for f in files if f["name"].startswith("combined_nepse_") and f["name"].endswith(".csv")]
+        combined_files = [
+            f["name"] for f in files if f["name"].startswith("combined_nepse_") and f["name"].endswith(".csv")
+        ]
         if not combined_files:
             raise ValueError("No combined_nepse_*.csv file found in repo")
 
@@ -59,20 +56,23 @@ except Exception as e:
     print(f"⚠️ Failed to fetch today's NEPSE data: {e}")
     content = []
 
-df_today = pd.DataFrame([{
+# -------------------- Process Today's Data --------------------
+filtered_data = []
+for item in content:
+    filtered_data.append({
         'Symbol': item.get('symbol', ''),
         'Date': item.get('businessDate', ''),
         'Open': item.get('openPrice', 0),
         'Close': item.get('closePrice', 0),
         'Volume': item.get('totalTradedQuantity', 0)
-    } for item in content], columns=COLUMNS)
+    })
 
-# Clean numeric columns for today's data
-for col in ['Open', 'Close', 'Volume']:
-    df_today[col] = clean_numeric(df_today[col])
+df_today = pd.DataFrame(filtered_data, columns=COLUMNS)
 
+# -------------------- Save Today's File --------------------
 if not df_today.empty:
-    today_file = f"nepse_{datetime.now().strftime('%Y-%m-%d')}.csv"
+    today_date = datetime.now().strftime('%Y-%m-%d')
+    today_file = f"nepse_{today_date}.csv"
     df_today.to_csv(today_file, index=False)
     print(f"✅ Today's data saved as '{today_file}'")
 else:
@@ -81,89 +81,76 @@ else:
 # -------------------- Merge with Latest GitHub CSV --------------------
 if not df_today.empty and LATEST_URL:
     try:
-        resp = requests.get(LATEST_URL)
-        resp.raise_for_status()
-        df_latest = pd.read_csv(io.StringIO(resp.text), dtype=str)
+        df_latest = pd.read_csv(LATEST_URL)
         df_latest = df_latest[[col for col in COLUMNS if col in df_latest.columns]]
 
-        # Clean numeric columns for latest CSV
-        for col in ['Open', 'Close', 'Volume']:
-            df_latest[col] = clean_numeric(df_latest[col])
-            df_today[col] = clean_numeric(df_today[col])
-
-        # Merge and drop duplicates
+        # Combine new and old data
         df_combined = pd.concat([df_latest, df_today], ignore_index=True)
         df_combined.drop_duplicates(subset=['Symbol', 'Date'], keep='last', inplace=True)
 
         # Convert Date and sort
         df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
         df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
-        df_combined.dropna(subset=['Close'], inplace=True)
 
-        # -------------------- Calculate MA3, MA9, AvgVol9, RSI-13D --------------------
-        MA_PERIOD = 3
-        AVG_VOL_PERIOD = 9
-        RSI_PERIOD = 13
-
+        # -------------------- Calculate Averages and RSI --------------------
+        N = 12  # RSI period
         result_list = []
 
         for symbol, group in df_combined.groupby('Symbol'):
-            group = group.copy().sort_values(by='Date').reset_index(drop=True)
-            group['MA_3D'] = group['Close'].rolling(window=MA_PERIOD, min_periods=1).mean()
-            group['MA_9D'] = group['Close'].rolling(window=9, min_periods=1).mean()
-            group['Avg_Vol_9D'] = group['Volume'].rolling(window=AVG_VOL_PERIOD, min_periods=1).mean()
+            group = group.copy()
 
-            if len(group) < RSI_PERIOD + 1:
-                continue
+            # Ensure data is sorted in ascending order by Date
+            group.sort_values(by='Date', inplace=True)
 
-            closes = group['Close'].astype(float).reset_index(drop=True)
-            deltas = closes.diff()
-            gains = deltas.clip(lower=0)
-            losses = -deltas.clip(upper=0)
+            group['Avg_Vol_9D'] = group['Volume'].rolling(window=9).mean()
+            group['MA_3D'] = group['Close'].rolling(window=3).mean()
+            group['MA_9D'] = group['Close'].rolling(window=9).mean()
 
-            rsi_values = [None] * len(closes)
+            # Wilder’s Smoothed RSI-12D calculation
+            if len(group) >= N + 1:
+                closes = pd.to_numeric(group['Close'], errors='coerce').dropna()
+                delta = closes.diff()
 
-            # Normal RSI-13D
-            for i in range(RSI_PERIOD, len(closes)):
-                avg_gain = gains.iloc[i-RSI_PERIOD+1:i+1].mean()
-                avg_loss = losses.iloc[i-RSI_PERIOD+1:i+1].mean()
+                gain = delta.clip(lower=0)
+                loss = -delta.clip(upper=0)
 
-                if avg_loss == 0 and avg_gain == 0:
-                    rsi = 50.0
-                elif avg_loss == 0:
-                    rsi = 100.0
-                else:
-                    rs = avg_gain / avg_loss
-                    rsi = 100 - (100 / (1 + rs))
+                avg_gain = gain.ewm(alpha=1/N, adjust=False).mean()
+                avg_loss = loss.ewm(alpha=1/N, adjust=False).mean()
 
-                rsi_values[i] = rsi
+                rs = avg_gain / avg_loss
+                rsi = 100 - (100 / (1 + rs))
 
-            group['RSI_13D'] = pd.Series(rsi_values, index=group.index)
-            result_list.append(group.iloc[[-1]])
+                # Assign only latest day RSI
+                group['RSI_12D'] = float('nan')
+                group.loc[group.index[-1], 'RSI_12D'] = round(rsi.iloc[-1], 2)
 
+                result_list.append(group.iloc[[-1]])
+
+        # Combine only symbols with sufficient data
         if result_list:
             df_lastday = pd.concat(result_list, ignore_index=True)
         else:
             df_lastday = pd.DataFrame(columns=['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_13D'])
+                                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_12D'])
 
         # -------------------- Final Formatting --------------------
         df_lastday['Date'] = pd.to_datetime(df_lastday['Date']).dt.strftime('%Y-%m-%d')
         df_lastday['Avg_Vol_9D'] = df_lastday['Avg_Vol_9D'].fillna(0).astype(int)
         df_lastday['MA_3D'] = df_lastday['MA_3D'].round(2)
         df_lastday['MA_9D'] = df_lastday['MA_9D'].round(2)
-        df_lastday['RSI_13D'] = df_lastday['RSI_13D'].round(2)
 
+        # Final Columns
         df_final = df_lastday[['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_13D']]
+                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_12D']]
 
         df_final.sort_values(by='Symbol', inplace=True)
         df_final.reset_index(drop=True, inplace=True)
         df_final.index += 1
         df_final.index.name = 'S.N.'
 
+        # -------------------- Save Final Output --------------------
         df_final.to_csv("completedata.csv", index=True)
-        print("✅ File 'completedata.csv' saved successfully with MA3, MA9, AvgVol9 and RSI-13D.")
+        print("✅ File 'completedata.csv' saved successfully with Wilder’s smoothed RSI-12D.")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
