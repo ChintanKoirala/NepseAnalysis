@@ -1,7 +1,7 @@
 
 
 
-# this code calculates 9 days average vol and 3 day and 9 day moving average 
+# this code calculates 9 days average vol  and 9 day moving average 
 
 
 try:
@@ -94,77 +94,83 @@ if not df_today.empty and LATEST_URL:
         df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
         df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
 
-        # -------------------- Calculate Averages and RSI --------------------
-        N = 9  # RSI period
+        # -------------------- Calculate Averages and RSI(13D Wilder) --------------------
+        N = 13  # RSI period
         result_list = []
 
         for symbol, group in df_combined.groupby('Symbol'):
             group = group.copy()
-
-            # ✅ Ensure data is sorted in ascending order by Date
             group.sort_values(by='Date', inplace=True)
 
-            group['Avg_Vol_9D'] = group['Volume'].rolling(window=N).mean()
+            group['Avg_Vol_13D'] = group['Volume'].rolling(window=N).mean()
             group['MA_3D'] = group['Close'].rolling(window=3).mean()
-            group['MA_9D'] = group['Close'].rolling(window=N).mean()
+            group['MA_13D'] = group['Close'].rolling(window=N).mean()
 
-            # ✅ Correct RSI calculation (last 10 closes → 9 deltas)
             if len(group) >= N + 1:
-                closes = pd.to_numeric(group['Close'].iloc[-(N + 1):], errors='coerce').dropna()
+                closes = pd.to_numeric(group['Close'], errors='coerce').dropna()
+                deltas = closes.diff()
 
-                if len(closes) == N + 1:
-                    delta = closes.diff().dropna()
-                    gains = delta.clip(lower=0)
-                    losses = -delta.clip(upper=0)
+                gains = deltas.clip(lower=0)
+                losses = -deltas.clip(upper=0)
 
-                    avg_gain = gains.sum() / N
-                    avg_loss = losses.sum() / N
+                # First average gain/loss (simple)
+                avg_gain = gains.iloc[1:N+1].mean()
+                avg_loss = losses.iloc[1:N+1].mean()
+
+                rsi_values = [None] * len(closes)
+
+                # Wilder’s smoothing
+                for i in range(N + 1, len(closes)):
+                    current_gain = gains.iloc[i]
+                    current_loss = losses.iloc[i]
+
+                    avg_gain = ((avg_gain * (N - 1)) + current_gain) / N
+                    avg_loss = ((avg_loss * (N - 1)) + current_loss) / N
 
                     if avg_loss == 0 and avg_gain == 0:
-                        rsi = 50.0  # neutral case
+                        rsi = 50.0
                     elif avg_loss == 0:
                         rsi = 100.0
                     else:
                         rs = avg_gain / avg_loss
                         rsi = 100 - (100 / (1 + rs))
 
-                    # Assign RSI only to the last row (latest trading day)
-                    group['RSI_9D'] = float('nan')
-                    group.iloc[-1, group.columns.get_loc('RSI_9D')] = round(rsi, 2)
+                    rsi_values[i] = rsi
 
-                    # ✅ Debug check: last date must be same as C10 (latest close)
-                    # print(f"{symbol}: Last Date = {group['Date'].iloc[-1]}, RSI = {round(rsi, 2)}")
+                group['RSI_13D'] = pd.Series(rsi_values, index=closes.index)
 
-                    result_list.append(group.iloc[[-1]])
+                # Keep only last row (latest day)
+                last_row = group.iloc[[-1]].copy()
+                result_list.append(last_row)
 
-        # Combine only symbols with >=10 days (omit others)
+        # Combine all symbols' last rows
         if result_list:
             df_lastday = pd.concat(result_list, ignore_index=True)
         else:
             df_lastday = pd.DataFrame(columns=['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_9D'])
+                                               'Avg_Vol_13D', 'MA_3D', 'MA_13D', 'RSI_13D'])
 
         # -------------------- Final Formatting --------------------
         df_lastday['Date'] = pd.to_datetime(df_lastday['Date']).dt.strftime('%Y-%m-%d')
-        df_lastday['Avg_Vol_9D'] = df_lastday['Avg_Vol_9D'].fillna(0).astype(int)
+        df_lastday['Avg_Vol_13D'] = df_lastday['Avg_Vol_13D'].fillna(0).astype(int)
         df_lastday['MA_3D'] = df_lastday['MA_3D'].round(2)
-        df_lastday['MA_9D'] = df_lastday['MA_9D'].round(2)
+        df_lastday['MA_13D'] = df_lastday['MA_13D'].round(2)
+        df_lastday['RSI_13D'] = df_lastday['RSI_13D'].round(2)
 
-        # Final Columns
         df_final = df_lastday[['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_9D']]
+                               'Avg_Vol_13D', 'MA_3D', 'MA_13D', 'RSI_13D']]
 
         df_final.sort_values(by='Symbol', inplace=True)
         df_final.reset_index(drop=True, inplace=True)
         df_final.index += 1
         df_final.index.name = 'S.N.'
 
-        # -------------------- Save Final Output --------------------
         df_final.to_csv("completedata.csv", index=True)
-        print("✅ File 'completedata.csv' saved successfully with correct RSI(9) calculation (ascending date order).")
+        print("✅ File 'completedata.csv' saved successfully with RSI(13) using Wilder’s smoothing.")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
+
 
 
 
