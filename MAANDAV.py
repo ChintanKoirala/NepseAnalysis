@@ -100,17 +100,20 @@ if not df_today.empty and LATEST_URL:
         df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
         df_combined.dropna(subset=['Close'], inplace=True)
 
-        # -------------------- Calculate MA, AvgVol, RSI(13D Wilder) --------------------
-        N = 13
+        # -------------------- Calculate MA3, MA9, AvgVol9, RSI-13D --------------------
+        MA_PERIOD = 3
+        AVG_VOL_PERIOD = 9
+        RSI_PERIOD = 13
+
         result_list = []
 
         for symbol, group in df_combined.groupby('Symbol'):
             group = group.copy().sort_values(by='Date').reset_index(drop=True)
-            group['Avg_Vol_13D'] = group['Volume'].rolling(window=N, min_periods=1).mean()
-            group['MA_3D'] = group['Close'].rolling(window=3, min_periods=1).mean()
-            group['MA_13D'] = group['Close'].rolling(window=N, min_periods=1).mean()
+            group['MA_3D'] = group['Close'].rolling(window=MA_PERIOD, min_periods=1).mean()
+            group['MA_9D'] = group['Close'].rolling(window=9, min_periods=1).mean()
+            group['Avg_Vol_9D'] = group['Volume'].rolling(window=AVG_VOL_PERIOD, min_periods=1).mean()
 
-            if len(group) < N + 1:
+            if len(group) < RSI_PERIOD + 1:
                 continue
 
             closes = group['Close'].astype(float).reset_index(drop=True)
@@ -118,17 +121,12 @@ if not df_today.empty and LATEST_URL:
             gains = deltas.clip(lower=0)
             losses = -deltas.clip(upper=0)
 
-            # Initial average gain/loss
-            avg_gain = gains.iloc[1:N+1].mean()
-            avg_loss = losses.iloc[1:N+1].mean()
-
             rsi_values = [None] * len(closes)
 
-            for i in range(N + 1, len(closes)):
-                current_gain = gains.iloc[i]
-                current_loss = losses.iloc[i]
-                avg_gain = ((avg_gain * (N - 1)) + current_gain) / N
-                avg_loss = ((avg_loss * (N - 1)) + current_loss) / N
+            # Normal RSI-13D
+            for i in range(RSI_PERIOD, len(closes)):
+                avg_gain = gains.iloc[i-RSI_PERIOD+1:i+1].mean()
+                avg_loss = losses.iloc[i-RSI_PERIOD+1:i+1].mean()
 
                 if avg_loss == 0 and avg_gain == 0:
                     rsi = 50.0
@@ -147,17 +145,17 @@ if not df_today.empty and LATEST_URL:
             df_lastday = pd.concat(result_list, ignore_index=True)
         else:
             df_lastday = pd.DataFrame(columns=['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                                               'Avg_Vol_13D', 'MA_3D', 'MA_13D', 'RSI_13D'])
+                                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_13D'])
 
         # -------------------- Final Formatting --------------------
         df_lastday['Date'] = pd.to_datetime(df_lastday['Date']).dt.strftime('%Y-%m-%d')
-        df_lastday['Avg_Vol_13D'] = df_lastday['Avg_Vol_13D'].fillna(0).astype(int)
+        df_lastday['Avg_Vol_9D'] = df_lastday['Avg_Vol_9D'].fillna(0).astype(int)
         df_lastday['MA_3D'] = df_lastday['MA_3D'].round(2)
-        df_lastday['MA_13D'] = df_lastday['MA_13D'].round(2)
+        df_lastday['MA_9D'] = df_lastday['MA_9D'].round(2)
         df_lastday['RSI_13D'] = df_lastday['RSI_13D'].round(2)
 
         df_final = df_lastday[['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                               'Avg_Vol_13D', 'MA_3D', 'MA_13D', 'RSI_13D']]
+                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_13D']]
 
         df_final.sort_values(by='Symbol', inplace=True)
         df_final.reset_index(drop=True, inplace=True)
@@ -165,10 +163,11 @@ if not df_today.empty and LATEST_URL:
         df_final.index.name = 'S.N.'
 
         df_final.to_csv("completedata.csv", index=True)
-        print("✅ File 'completedata.csv' saved successfully with RSI(13) using Wilder’s smoothing.")
+        print("✅ File 'completedata.csv' saved successfully with MA3, MA9, AvgVol9 and RSI-13D.")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
+
 
 
 # upload in github
