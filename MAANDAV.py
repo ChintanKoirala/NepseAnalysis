@@ -12,6 +12,7 @@ except ModuleNotFoundError:
 
 import pandas as pd
 import requests
+import io
 import re
 from datetime import datetime
 
@@ -65,6 +66,10 @@ df_today = pd.DataFrame([{
         'Volume': item.get('totalTradedQuantity', 0)
     } for item in content], columns=COLUMNS)
 
+# Force numeric types for today's data
+for col in ['Open', 'Close', 'Volume']:
+    df_today[col] = pd.to_numeric(df_today[col], errors='coerce')
+
 if not df_today.empty:
     today_file = f"nepse_{datetime.now().strftime('%Y-%m-%d')}.csv"
     df_today.to_csv(today_file, index=False)
@@ -72,19 +77,21 @@ if not df_today.empty:
 else:
     print("⚠️ No data available for today.")
 
-# -------------------- Merge and Process --------------------
+# -------------------- Merge with Latest GitHub CSV --------------------
 if not df_today.empty and LATEST_URL:
     try:
-        # Read latest GitHub CSV safely
-        df_latest = pd.read_csv(LATEST_URL, dtype=str)
+        # Read latest GitHub CSV via requests + StringIO
+        resp = requests.get(LATEST_URL)
+        resp.raise_for_status()
+        df_latest = pd.read_csv(io.StringIO(resp.text), dtype=str)
         df_latest = df_latest[[col for col in COLUMNS if col in df_latest.columns]]
 
-        # Force numeric columns
+        # Clean numeric columns
         for col in ['Open', 'Close', 'Volume']:
-            df_latest[col] = pd.to_numeric(df_latest[col], errors='coerce')
+            df_latest[col] = df_latest[col].str.replace(",", "").astype(float)
             df_today[col] = pd.to_numeric(df_today[col], errors='coerce')
 
-        # Merge
+        # Combine and drop duplicates
         df_combined = pd.concat([df_latest, df_today], ignore_index=True)
         df_combined.drop_duplicates(subset=['Symbol', 'Date'], keep='last', inplace=True)
 
@@ -92,10 +99,10 @@ if not df_today.empty and LATEST_URL:
         df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
         df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
 
-        # Drop invalid Close
+        # Drop invalid Close values
         df_combined.dropna(subset=['Close'], inplace=True)
 
-        # -------------------- Calculate Averages and RSI(13 Wilder) --------------------
+        # -------------------- Calculate Averages and RSI(13D Wilder) --------------------
         N = 13
         result_list = []
 
@@ -104,19 +111,20 @@ if not df_today.empty and LATEST_URL:
             group.sort_values(by='Date', inplace=True)
             group.reset_index(drop=True, inplace=True)
 
+            # Rolling averages
             group['Avg_Vol_13D'] = group['Volume'].rolling(window=N, min_periods=1).mean()
             group['MA_3D'] = group['Close'].rolling(window=3, min_periods=1).mean()
             group['MA_13D'] = group['Close'].rolling(window=N, min_periods=1).mean()
 
             if len(group) < N + 1:
-                continue  # skip if not enough data
+                continue
 
             closes = group['Close']
             deltas = closes.diff()
             gains = deltas.clip(lower=0)
             losses = -deltas.clip(upper=0)
 
-            # First average gain/loss
+            # Initial average gain/loss
             avg_gain = gains.iloc[1:N+1].mean()
             avg_loss = losses.iloc[1:N+1].mean()
 
@@ -142,7 +150,7 @@ if not df_today.empty and LATEST_URL:
 
             group['RSI_13D'] = pd.Series(rsi_values, index=group.index)
 
-            result_list.append(group.iloc[[-1]])  # keep last day
+            result_list.append(group.iloc[[-1]])
 
         if result_list:
             df_lastday = pd.concat(result_list, ignore_index=True)
@@ -170,7 +178,6 @@ if not df_today.empty and LATEST_URL:
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
-
 
 # upload in github
 
