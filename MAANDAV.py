@@ -3,7 +3,6 @@
 
 # this code calculates 9 days average vol  and 9 day moving average 
 
-
 try:
     from nepse_scraper import Nepse_scraper
 except ModuleNotFoundError:
@@ -102,18 +101,24 @@ if not df_today.empty and LATEST_URL:
             group = group.copy()
             group.sort_values(by='Date', inplace=True)
 
+            # 🔧 Force numeric type for Close & Volume
+            group['Close'] = pd.to_numeric(group['Close'], errors='coerce')
+            group['Volume'] = pd.to_numeric(group['Volume'], errors='coerce')
+            group['Open'] = pd.to_numeric(group['Open'], errors='coerce')
+            group.dropna(subset=['Close'], inplace=True)
+
             group['Avg_Vol_13D'] = group['Volume'].rolling(window=N).mean()
             group['MA_3D'] = group['Close'].rolling(window=3).mean()
             group['MA_13D'] = group['Close'].rolling(window=N).mean()
 
             if len(group) >= N + 1:
-                closes = pd.to_numeric(group['Close'], errors='coerce').dropna()
+                closes = group['Close'].reset_index(drop=True)
                 deltas = closes.diff()
 
                 gains = deltas.clip(lower=0)
                 losses = -deltas.clip(upper=0)
 
-                # First average gain/loss (simple)
+                # First average gain/loss (simple average)
                 avg_gain = gains.iloc[1:N+1].mean()
                 avg_loss = losses.iloc[1:N+1].mean()
 
@@ -137,9 +142,9 @@ if not df_today.empty and LATEST_URL:
 
                     rsi_values[i] = rsi
 
-                group['RSI_13D'] = pd.Series(rsi_values, index=closes.index)
+                group['RSI_13D'] = pd.Series(rsi_values, index=group.index)
 
-                # Keep only last row (latest day)
+                # Keep only the last (latest) row
                 last_row = group.iloc[[-1]].copy()
                 result_list.append(last_row)
 
