@@ -72,7 +72,6 @@ except ModuleNotFoundError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "nepse-scraper"])
     from nepse_scraper import Nepse_scraper
 
-# -------------------- Imports --------------------
 import pandas as pd
 import numpy as np
 import requests
@@ -83,17 +82,16 @@ from datetime import datetime
 COLUMNS = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
 REPO_URL = "https://api.github.com/repos/ChintanKoirala/NepseAnalysis/contents/daily_data"
 RAW_BASE = "https://raw.githubusercontent.com/ChintanKoirala/NepseAnalysis/main/daily_data"
-MAX_DAYS = 60  # keep only latest 60 unique days
+MAX_DAYS = 60
+RSI_PERIOD = 14
 
-# -------------------- Fetch Latest Combined File --------------------
+# -------------------- Fetch Latest GitHub CSV --------------------
 def get_latest_combined_url():
     try:
         resp = requests.get(REPO_URL)
         resp.raise_for_status()
         files = resp.json()
-        combined_files = [
-            f["name"] for f in files if f["name"].startswith("combined_nepse_") and f["name"].endswith(".csv")
-        ]
+        combined_files = [f["name"] for f in files if f["name"].startswith("combined_nepse_") and f["name"].endswith(".csv")]
         if not combined_files:
             raise ValueError("No combined_nepse_*.csv file found in repo")
         dates = []
@@ -131,52 +129,35 @@ filtered_data = [
 ]
 
 df_today = pd.DataFrame(filtered_data, columns=COLUMNS)
-
 if not df_today.empty:
-    today_date = datetime.now().strftime('%Y-%m-%d')
-    today_file = f"nepse_{today_date}.csv"
+    today_file = f"nepse_{datetime.now().strftime('%Y-%m-%d')}.csv"
     df_today.to_csv(today_file, index=False)
     print(f"✅ Today's data saved as '{today_file}'")
 else:
     print("⚠️ No data available for today.")
 
-# -------------------- Wilder-smoothed RSI --------------------
-def calculate_rsi_wilder(prices, period=14):
+# -------------------- Simple Standard RSI --------------------
+def calculate_rsi_simple(prices, period=14):
     prices = pd.Series(prices).astype(float).reset_index(drop=True)
-    length = len(prices)
-    rsi = pd.Series([np.nan] * length)
-    if length < (period + 1):
+    rsi = pd.Series([np.nan] * len(prices))
+    if len(prices) < period + 1:
         return rsi
 
-    deltas = prices.diff()
-    gains = deltas.clip(lower=0)
-    losses = -deltas.clip(upper=0)
-
-    avg_gain = gains.iloc[1:period+1].mean()
-    avg_loss = losses.iloc[1:period+1].mean()
-
-    if avg_gain == 0 and avg_loss == 0:
-        rsi.iloc[period] = 50.0
-    elif avg_loss == 0:
-        rsi.iloc[period] = 100.0
-    else:
-        rs = avg_gain / avg_loss
-        rsi.iloc[period] = 100 - (100 / (1 + rs))
-
-    for i in range(period + 1, length):
-        gain = gains.iloc[i]
-        loss = losses.iloc[i]
-        avg_gain = (avg_gain * (period - 1) + gain) / period
-        avg_loss = (avg_loss * (period - 1) + loss) / period
-        if avg_gain == 0 and avg_loss == 0:
-            rsi_val = 50.0
-        elif avg_loss == 0:
+    for i in range(period, len(prices)):
+        window = prices[i-period:i+1]
+        deltas = window.diff().dropna()
+        gains = deltas[deltas > 0].sum()
+        losses = -deltas[deltas < 0].sum()
+        avg_gain = gains / period
+        avg_loss = losses / period
+        if avg_loss == 0:
             rsi_val = 100.0
+        elif avg_gain == 0:
+            rsi_val = 0.0
         else:
             rs = avg_gain / avg_loss
             rsi_val = 100 - (100 / (1 + rs))
-        rsi.iloc[i] = round(rsi_val, 2)
-
+        rsi.iloc[i] = round(rsi_val, 1)
     return rsi
 
 # -------------------- Merge with Latest GitHub CSV --------------------
@@ -184,95 +165,83 @@ if not df_today.empty and LATEST_URL:
     try:
         df_latest = pd.read_csv(LATEST_URL)
         df_latest = df_latest[[col for col in COLUMNS if col in df_latest.columns]]
-
         df_combined = pd.concat([df_latest, df_today], ignore_index=True)
         df_combined.drop_duplicates(subset=['Symbol', 'Date'], keep='last', inplace=True)
         df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
         df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
 
         result_list = []
-        N = 14  # RSI period
         for symbol, group in df_combined.groupby('Symbol'):
             group = group.copy()
-            group['Avg_Vol_9D'] = group['Volume'].rolling(window=9).mean()
-            group['MA_3D'] = group['Close'].rolling(window=3).mean()
-            group['MA_9D'] = group['Close'].rolling(window=9).mean()
+            group['Avg_Vol_9D'] = group['Volume'].rolling(9).mean()
+            group['MA_3D'] = group['Close'].rolling(3).mean()
+            group['MA_9D'] = group['Close'].rolling(9).mean()
+            group['Vol_Ratio'] = group['Volume'] / group['Avg_Vol_9D']
 
-            if len(group) >= (N + 1):
-                rsi_series = calculate_rsi_wilder(group['Close'].values, period=N)
+            if len(group) >= RSI_PERIOD + 1:
+                rsi_series = calculate_rsi_simple(group['Close'].values, period=RSI_PERIOD)
                 group['RSI_14D'] = np.nan
-                last_rsi = rsi_series.iloc[-1]
-                if not np.isnan(last_rsi):
-                    group.iloc[-1, group.columns.get_loc('RSI_14D')] = last_rsi
+                group.iloc[-1, group.columns.get_loc('RSI_14D')] = rsi_series.iloc[-1]
 
-                group['Vol_Ratio'] = group['Volume'] / group['Avg_Vol_9D']
+                # -------------------- Determine Remarks --------------------
+                def update_remarks(row):
+                    rsi, vol_ratio, vol, avg_vol = row['RSI_14D'], row['Vol_Ratio'], row['Volume'], row['Avg_Vol_9D']
+                    remark = ''
 
-                # Buy/Sell Zone
-                group['Remarks'] = ''
-                row = group.iloc[-1]
-                if row['MA_3D'] >= 1.01 * row['MA_9D'] and row['Vol_Ratio'] >= 0.4:
-                    group.iloc[-1, group.columns.get_loc('Remarks')] = 'Buy Zone'
-                elif row['MA_3D'] <= 0.99 * row['MA_9D'] and row['Vol_Ratio'] < 2.0:
-                    group.iloc[-1, group.columns.get_loc('Remarks')] = 'Sell Zone'
+                    # Buy Zone
+                    if row['MA_3D'] >= 1.00 * row['MA_9D'] and vol_ratio >= 0.4:
+                        if rsi <= 60 and vol_ratio >= 1.2: remark = 'Strong Buy'
+                        if rsi <= 40 and vol_ratio >= 1.6: remark = 'Very Strong Buy'
+                        if rsi <= 40 and vol_ratio >= 2.0: remark = 'Very Very Strong Buy'
+                        if rsi > 60: remark = 'Overbought - Ready to Sell'
+                        if remark == '': remark = 'Buy Zone'
 
+                    # Sell Zone
+                    elif row['MA_3D'] <= 1.00 * row['MA_9D'] and vol_ratio < 3.0:
+                        if rsi < 70 and vol <= avg_vol: remark = 'Strong Sell'
+                        if rsi >= 70: remark = 'Very Very Strong Sell'
+                        if vol <= 0.9 * avg_vol: remark = 'Much Strong Sell'
+                        if vol <= 0.8 * avg_vol: remark = 'Very Much Strong Sell'
+                        if remark == '': remark = 'Sell Zone'
+
+                    # Fallback
+                    if remark == '':
+                        remark = 'Hold'
+
+                    return remark
+
+                group['Remarks'] = group.apply(update_remarks, axis=1)
                 result_list.append(group.iloc[[-1]])
 
-        if result_list:
-            df_lastday = pd.concat(result_list, ignore_index=True)
-        else:
-            df_lastday = pd.DataFrame(columns=[
-                'Symbol', 'Date', 'Open', 'Close', 'Volume',
-                'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_14D', 'Remarks'
-            ])
+        df_lastday = pd.concat(result_list, ignore_index=True) if result_list else pd.DataFrame(columns=[
+            'Symbol','Date','Open','Close','Volume','Avg_Vol_9D','MA_3D','MA_9D','RSI_14D','Remarks'
+        ])
 
-        # -------------------- Refine Remarks --------------------
-        def update_remarks(row):
-            rsi = row['RSI_14D']
-            vol_ratio = row['Vol_Ratio']
-            vol = row['Volume']
-            avg_vol = row['Avg_Vol_9D']
-            remark = row['Remarks']
-
-            if remark == 'Buy Zone':
-                if rsi <= 60 and vol_ratio >= 1.2: remark = 'Strong Buy'
-                if rsi <= 40 and vol_ratio >= 1.6: remark = 'Very Strong Buy'
-                if rsi <= 40 and vol_ratio >= 2.0: remark = 'Very Very Strong Buy'
-                if rsi > 60: remark = 'Overbought - Ready to Sell'
-            elif remark == 'Sell Zone':
-                if rsi < 70 and vol <= avg_vol: remark = 'Strong Sell'
-                if rsi >= 70: remark = 'Very Very Strong Sell'
-                if vol <= 0.9 * avg_vol: remark = 'Much Strong Sell'
-                if vol <= 0.8 * avg_vol: remark = 'Very Much Strong Sell'
-            return remark
-
-        df_lastday['Remarks'] = df_lastday.apply(update_remarks, axis=1)
-
-        # -------------------- Sort by Signal Strength --------------------
+        # -------------------- Sort and Format --------------------
         signal_order = [
             'Very Very Strong Buy', 'Very Strong Buy', 'Strong Buy', 'Overbought - Ready to Sell',
-            'Strong Sell', 'Much Strong Sell', 'Very Much Strong Sell', 'Very Very Strong Sell'
+            'Strong Sell', 'Much Strong Sell', 'Very Much Strong Sell', 'Very Very Strong Sell',
+            'Buy Zone', 'Sell Zone', 'Hold'
         ]
         df_lastday['Remarks'] = pd.Categorical(df_lastday['Remarks'], categories=signal_order, ordered=True)
-        df_lastday.sort_values(by=['Remarks', 'Symbol'], inplace=True)
+        df_lastday.sort_values(by=['Remarks','Symbol'], inplace=True)
 
         df_lastday['Date'] = df_lastday['Date'].dt.strftime('%Y-%m-%d')
         df_lastday['Avg_Vol_9D'] = df_lastday['Avg_Vol_9D'].fillna(0).astype(int)
         df_lastday['MA_3D'] = df_lastday['MA_3D'].round(2)
         df_lastday['MA_9D'] = df_lastday['MA_9D'].round(2)
+        df_lastday['RSI_14D'] = df_lastday['RSI_14D'].round(1)
 
-        df_lastday = df_lastday[['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                                 'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_14D', 'Remarks']]
-
+        df_lastday = df_lastday[['Symbol','Date','Open','Close','Volume','Avg_Vol_9D','MA_3D','MA_9D','RSI_14D','Remarks']]
         df_lastday.reset_index(drop=True, inplace=True)
         df_lastday.index += 1
         df_lastday.index.name = 'S.N.'
 
         df_lastday.to_csv("filtered_nepse_signals.csv", index=True)
-        print("✅ File 'filtered_nepse_signals.csv' saved successfully with updated criteria.")
+        print("✅ File 'filtered_nepse_signals.csv' saved successfully with standard RSI.")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
-
 
 
 
