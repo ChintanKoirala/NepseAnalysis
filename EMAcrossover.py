@@ -65,7 +65,6 @@ else:
 
 
 # this code combines last traded day data from nepse and combines it with other latest data for 60 days only
-
 try:
     from nepse_scraper import Nepse_scraper
 except ModuleNotFoundError:
@@ -273,6 +272,7 @@ if not df_today.empty and LATEST_URL:
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
+
 
 
 # EMA cross calculation and signal generation
