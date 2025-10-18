@@ -93,23 +93,21 @@ if not df_today.empty and LATEST_URL:
         df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
 
         # -------------------- Calculate Averages and RSI --------------------
-        N = 12  # RSI period changed to 12D
+        N = 14  # RSI period (changed from 12D to 14D)
         result_list = []
 
         for symbol, group in df_combined.groupby('Symbol'):
             group = group.copy()
-
-            # Ensure data is sorted in ascending order by Date
             group.sort_values(by='Date', inplace=True)
 
+            # Moving averages and average volume
             group['Avg_Vol_9D'] = group['Volume'].rolling(window=N).mean()
             group['MA_3D'] = group['Close'].rolling(window=3).mean()
             group['MA_9D'] = group['Close'].rolling(window=N).mean()
 
-            # Correct RSI calculation (last 13 closes → 12 deltas)
+            # RSI (14D) calculation using simple method
             if len(group) >= N + 1:
                 closes = pd.to_numeric(group['Close'].iloc[-(N + 1):], errors='coerce').dropna()
-
                 if len(closes) == N + 1:
                     delta = closes.diff().dropna()
                     gains = delta.clip(lower=0)
@@ -119,25 +117,22 @@ if not df_today.empty and LATEST_URL:
                     avg_loss = losses.sum() / N
 
                     if avg_loss == 0 and avg_gain == 0:
-                        rsi = 50.0  # neutral case
+                        rsi = 50.0
                     elif avg_loss == 0:
                         rsi = 100.0
                     else:
                         rs = avg_gain / avg_loss
                         rsi = 100 - (100 / (1 + rs))
 
-                    # Assign RSI only to the last row (latest trading day)
-                    group['RSI_12D'] = float('nan')
-                    group.iloc[-1, group.columns.get_loc('RSI_12D')] = round(rsi, 2)
-
+                    group['Rsi_14D'] = float('nan')
+                    group.iloc[-1, group.columns.get_loc('Rsi_14D')] = round(rsi, 2)
                     result_list.append(group.iloc[[-1]])
 
-        # Combine only symbols with >=13 days (omit others)
         if result_list:
             df_lastday = pd.concat(result_list, ignore_index=True)
         else:
             df_lastday = pd.DataFrame(columns=['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_12D'])
+                                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'Rsi_14D'])
 
         # -------------------- Final Formatting --------------------
         df_lastday['Date'] = pd.to_datetime(df_lastday['Date']).dt.strftime('%Y-%m-%d')
@@ -145,18 +140,16 @@ if not df_today.empty and LATEST_URL:
         df_lastday['MA_3D'] = df_lastday['MA_3D'].round(2)
         df_lastday['MA_9D'] = df_lastday['MA_9D'].round(2)
 
-        # Final Columns
         df_final = df_lastday[['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'RSI_12D']]
+                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'Rsi_14D']]
 
         df_final.sort_values(by='Symbol', inplace=True)
         df_final.reset_index(drop=True, inplace=True)
         df_final.index += 1
         df_final.index.name = 'S.N.'
 
-        # -------------------- Save Final Output --------------------
         df_final.to_csv("completedata.csv", index=True)
-        print("✅ File 'completedata.csv' saved successfully with correct RSI(12) calculation (ascending date order).")
+        print("✅ File 'completedata.csv' saved successfully with correct Rsi(14D) calculation (ascending date order).")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
