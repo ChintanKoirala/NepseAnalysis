@@ -19,7 +19,7 @@ from datetime import datetime
 COLUMNS = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
 REPO_URL = "https://api.github.com/repos/ChintanKoirala/NepseAnalysis/contents/daily_data"
 RAW_BASE = "https://raw.githubusercontent.com/ChintanKoirala/NepseAnalysis/main/daily_data"
-MAX_DAYS = 60  # Keep latest 60 trading days
+MAX_DAYS = 60
 
 # -------------------- Find Latest combined_nepse File --------------------
 def get_latest_combined_url():
@@ -84,64 +84,75 @@ if not df_today.empty and LATEST_URL:
         df_latest = pd.read_csv(LATEST_URL)
         df_latest = df_latest[[col for col in COLUMNS if col in df_latest.columns]]
 
-        # Combine new and old data
         df_combined = pd.concat([df_latest, df_today], ignore_index=True)
         df_combined.drop_duplicates(subset=['Symbol', 'Date'], keep='last', inplace=True)
-
-        # Convert Date and sort
         df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
         df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
 
-        # -------------------- Calculate Averages and RSI --------------------
-        N = 14  # RSI period (changed from 12D to 14D)
-        result_list = []
+        N = 14  # RSI period
+        output_rows = []
 
         for symbol, group in df_combined.groupby('Symbol'):
             group = group.copy()
             group.sort_values(by='Date', inplace=True)
 
-            # Moving averages and average volume
-            group['Avg_Vol_9D'] = group['Volume'].rolling(window=N).mean()
-            group['MA_3D'] = group['Close'].rolling(window=3).mean()
-            group['MA_9D'] = group['Close'].rolling(window=N).mean()
+            closes = pd.to_numeric(group['Close'], errors='coerce').dropna()
+            if len(closes) < N + 3:
+                continue
 
-            # RSI (14D) calculation using simple method
-            if len(group) >= N + 1:
-                closes = pd.to_numeric(group['Close'].iloc[-(N + 1):], errors='coerce').dropna()
-                if len(closes) == N + 1:
-                    delta = closes.diff().dropna()
-                    gains = delta.clip(lower=0)
-                    losses = -delta.clip(upper=0)
+            delta = closes.diff()
+            gains = delta.clip(lower=0)
+            losses = -delta.clip(upper=0)
 
-                    avg_gain = gains.sum() / N
-                    avg_loss = losses.sum() / N
+            rsi_values = []
 
-                    if avg_loss == 0 and avg_gain == 0:
-                        rsi = 50.0
-                    elif avg_loss == 0:
-                        rsi = 100.0
-                    else:
-                        rs = avg_gain / avg_loss
-                        rsi = 100 - (100 / (1 + rs))
+            # Calculate RSI for last 3 trading days using standard average method
+            for offset in [0, 1, 2]:  # 0 = last, 1 = 1 day before, 2 = 2 days before
+                if len(closes) < N + 1 + offset:
+                    rsi_values.append(None)
+                    continue
+                gains_period = gains.iloc[-(N + offset):-offset if offset != 0 else None]
+                losses_period = losses.iloc[-(N + offset):-offset if offset != 0 else None]
 
-                    group['Rsi_14D'] = float('nan')
-                    group.iloc[-1, group.columns.get_loc('Rsi_14D')] = round(rsi, 2)
-                    result_list.append(group.iloc[[-1]])
+                avg_gain = gains_period.mean()
+                avg_loss = losses_period.mean()
 
-        if result_list:
-            df_lastday = pd.concat(result_list, ignore_index=True)
+                if avg_loss == 0 and avg_gain == 0:
+                    rsi = 50.0
+                elif avg_loss == 0:
+                    rsi = 100.0
+                else:
+                    rs = avg_gain / avg_loss
+                    rsi = 100 - (100 / (1 + rs))
+                rsi_values.append(round(rsi, 2))
+
+            last_row = group.iloc[[-1]].copy()
+            last_row['Avg_Vol_9D'] = group['Volume'].rolling(window=N).mean().iloc[-1]
+            last_row['MA_3D'] = group['Close'].rolling(window=3).mean().iloc[-1]
+            last_row['MA_9D'] = group['Close'].rolling(window=N).mean().iloc[-1]
+
+            # Add RSI columns
+            last_row['Rsi_14D_Last'] = rsi_values[0]
+            last_row['Rsi_14D_1D_Before'] = rsi_values[1]
+            last_row['Rsi_14D_2D_Before'] = rsi_values[2]
+
+            output_rows.append(last_row)
+
+        if output_rows:
+            df_final = pd.concat(output_rows, ignore_index=True)
         else:
-            df_lastday = pd.DataFrame(columns=['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'Rsi_14D'])
+            df_final = pd.DataFrame(columns=['Symbol', 'Date', 'Open', 'Close', 'Volume',
+                                             'Avg_Vol_9D', 'MA_3D', 'MA_9D',
+                                             'Rsi_14D_Last', 'Rsi_14D_1D_Before', 'Rsi_14D_2D_Before'])
 
-        # -------------------- Final Formatting --------------------
-        df_lastday['Date'] = pd.to_datetime(df_lastday['Date']).dt.strftime('%Y-%m-%d')
-        df_lastday['Avg_Vol_9D'] = df_lastday['Avg_Vol_9D'].fillna(0).astype(int)
-        df_lastday['MA_3D'] = df_lastday['MA_3D'].round(2)
-        df_lastday['MA_9D'] = df_lastday['MA_9D'].round(2)
+        df_final['Date'] = pd.to_datetime(df_final['Date']).dt.strftime('%Y-%m-%d')
+        df_final['Avg_Vol_9D'] = df_final['Avg_Vol_9D'].fillna(0).astype(int)
+        df_final['MA_3D'] = df_final['MA_3D'].round(2)
+        df_final['MA_9D'] = df_final['MA_9D'].round(2)
 
-        df_final = df_lastday[['Symbol', 'Date', 'Open', 'Close', 'Volume',
-                               'Avg_Vol_9D', 'MA_3D', 'MA_9D', 'Rsi_14D']]
+        df_final = df_final[['Symbol', 'Date', 'Open', 'Close', 'Volume',
+                             'Avg_Vol_9D', 'MA_3D', 'MA_9D',
+                             'Rsi_14D_Last', 'Rsi_14D_1D_Before', 'Rsi_14D_2D_Before']]
 
         df_final.sort_values(by='Symbol', inplace=True)
         df_final.reset_index(drop=True, inplace=True)
@@ -149,11 +160,10 @@ if not df_today.empty and LATEST_URL:
         df_final.index.name = 'S.N.'
 
         df_final.to_csv("completedata.csv", index=True)
-        print("✅ File 'completedata.csv' saved successfully with correct Rsi(14D) calculation (ascending date order).")
+        print("✅ File 'completedata.csv' saved successfully with standard RSI(14D) for last 3 days.")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
-
 
 # upload in github
 
