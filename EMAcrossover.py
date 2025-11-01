@@ -3,75 +3,11 @@
 try:
     from nepse_scraper import Nepse_scraper
 except ModuleNotFoundError:
-    import sys
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "nepse-scraper"])
-    from nepse_scraper import Nepse_scraper
-
-# -------------------- Imports --------------------
-import pandas as pd
-from datetime import datetime
-import os
-
-# -------------------- Create Scraper Object --------------------
-request_obj = Nepse_scraper()
-
-# -------------------- Fetch Today's Price Data --------------------
-try:
-    today_price = request_obj.get_today_price()
-    content_data = today_price.get('content', [])
-except Exception as e:
-    print(f"⚠️ Failed to fetch today's data: {e}")
-    content_data = []
-
-# -------------------- Process Data --------------------
-filtered_data = []
-
-# Columns (without High, Low, and Percent Change)
-columns = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
-
-for item in content_data:
-    symbol = item.get('symbol', '')
-    date = item.get('businessDate', '')
-    open_price = item.get('openPrice', 0)
-    close_price = item.get('closePrice', 0)
-    volume_daily = item.get('totalTradedQuantity', 0)  # traded quantity
-
-    filtered_data.append({
-        'Symbol': symbol,
-        'Date': date,
-        'Open': open_price,
-        'Close': close_price,
-        'Volume': volume_daily
-    })
-
-# -------------------- Create DataFrame --------------------
-df = pd.DataFrame(filtered_data, columns=columns)
-
-# Optional: sort by Symbol
-df = df.sort_values(by='Symbol')
-
-# -------------------- Save to CSV --------------------
-if not df.empty:
-    print(df.head())  # Show first 5 rows
-    today_date = datetime.now().strftime('%Y-%m-%d')
-    file_name = f"nepse_{today_date}.csv"
-    df.to_csv(file_name, index=False)
-    print(f"✅ Data saved to '{file_name}'")
-else:
-    print("⚠️ No data available to create DataFrame.")
-
-
-
-
-# this code generates signals based on EMA cross, RSI-14D and volume
-try:
-    from nepse_scraper import Nepse_scraper
-except ModuleNotFoundError:
     import sys, subprocess
     subprocess.check_call([sys.executable, "-m", "pip", "install", "nepse-scraper"])
     from nepse_scraper import Nepse_scraper
 
+# -------------------- Imports --------------------
 import pandas as pd
 import numpy as np
 import requests
@@ -82,7 +18,6 @@ from datetime import datetime
 COLUMNS = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
 REPO_URL = "https://api.github.com/repos/ChintanKoirala/NepseAnalysis/contents/daily_data"
 RAW_BASE = "https://raw.githubusercontent.com/ChintanKoirala/NepseAnalysis/main/daily_data"
-MAX_DAYS = 60
 RSI_PERIOD = 14
 
 # -------------------- Fetch Latest GitHub CSV --------------------
@@ -136,15 +71,15 @@ if not df_today.empty:
 else:
     print("⚠️ No data available for today.")
 
-# -------------------- Simple Standard RSI --------------------
-def calculate_rsi_simple(prices, period=14):
+# -------------------- Standard RSI Calculation --------------------
+def calculate_rsi_standard(prices, period=14):
     prices = pd.Series(prices).astype(float).reset_index(drop=True)
     rsi = pd.Series([np.nan] * len(prices))
     if len(prices) < period + 1:
         return rsi
 
     for i in range(period, len(prices)):
-        window = prices[i-period:i+1]
+        window = prices[i - period:i + 1]
         deltas = window.diff().dropna()
         gains = deltas[deltas > 0].sum()
         losses = -deltas[deltas < 0].sum()
@@ -160,7 +95,7 @@ def calculate_rsi_simple(prices, period=14):
         rsi.iloc[i] = round(rsi_val, 1)
     return rsi
 
-# -------------------- Merge with Latest GitHub CSV --------------------
+# -------------------- Merge and Process --------------------
 if not df_today.empty and LATEST_URL:
     try:
         df_latest = pd.read_csv(LATEST_URL)
@@ -178,34 +113,46 @@ if not df_today.empty and LATEST_URL:
             group['MA_9D'] = group['Close'].rolling(9).mean()
             group['Vol_Ratio'] = group['Volume'] / group['Avg_Vol_9D']
 
-            if len(group) >= RSI_PERIOD + 1:
-                rsi_series = calculate_rsi_simple(group['Close'].values, period=RSI_PERIOD)
-                group['RSI_14D'] = np.nan
-                group.iloc[-1, group.columns.get_loc('RSI_14D')] = rsi_series.iloc[-1]
+            if len(group) >= RSI_PERIOD + 3:
+                rsi_series = calculate_rsi_standard(group['Close'].values, period=RSI_PERIOD)
+                group['RSI_14D_Last'] = np.nan
+                group['RSI_14D_1DayBefore'] = np.nan
+                group['RSI_14D_2DaysBefore'] = np.nan
 
-                # -------------------- Determine Remarks --------------------
+                group.iloc[-1, group.columns.get_loc('RSI_14D_Last')] = rsi_series.iloc[-1]
+                group.iloc[-1, group.columns.get_loc('RSI_14D_1DayBefore')] = rsi_series.iloc[-2]
+                group.iloc[-1, group.columns.get_loc('RSI_14D_2DaysBefore')] = rsi_series.iloc[-3]
+
+                # -------------------- Updated Remarks Logic --------------------
                 def update_remarks(row):
-                    rsi, vol_ratio, vol, avg_vol = row['RSI_14D'], row['Vol_Ratio'], row['Volume'], row['Avg_Vol_9D']
+                    rsi_last = row['RSI_14D_Last']
+                    rsi_prev1 = row['RSI_14D_1DayBefore']
+                    rsi_prev2 = row['RSI_14D_2DaysBefore']
+                    ma3, ma9 = row['MA_3D'], row['MA_9D']
+                    vol_ratio = row['Vol_Ratio']
+                    vol, avg_vol = row['Volume'], row['Avg_Vol_9D']
                     remark = ''
 
-                    # Buy Zone
-                    if row['MA_3D'] >= 1.00 * row['MA_9D'] and vol_ratio >= 0.4:
-                        if rsi <= 60 and vol_ratio >= 1.2: remark = 'Strong Buy'
-                        if rsi <= 40 and vol_ratio >= 1.6: remark = 'Very Strong Buy'
-                        if rsi <= 40 and vol_ratio >= 2.0: remark = 'Very Very Strong Buy'
-                        if rsi > 60: remark = 'Overbought - Ready to Sell'
-                        if remark == '': remark = 'Buy Zone'
+                    # --- Buy Zone Conditions ---
+                    if ma3 >= ma9 and vol_ratio >= 0.4:
+                        if (rsi_last < 60) and (rsi_last > rsi_prev1 > rsi_prev2) and (vol_ratio >= 1.5):
+                            remark = 'Very Strong Buy'
+                        elif (rsi_last < 60) and (rsi_last > rsi_prev1 > rsi_prev2) and (vol_ratio >= 1.0):
+                            remark = 'Strong Buy'
+                        elif rsi_last >= 60:
+                            remark = 'Overbought – Ready to Sell'
+                        else:
+                            remark = 'Buy Zone'
 
-                    # Sell Zone
-                    elif row['MA_3D'] <= 1.00 * row['MA_9D'] and vol_ratio < 3.0:
-                        if rsi < 70 and vol <= avg_vol: remark = 'Strong Sell'
-                        if rsi >= 70: remark = 'Very Very Strong Sell'
-                        if vol <= 0.9 * avg_vol: remark = 'Much Strong Sell'
-                        if vol <= 0.8 * avg_vol: remark = 'Very Much Strong Sell'
-                        if remark == '': remark = 'Sell Zone'
-
-                    # Fallback
-                    if remark == '':
+                    # --- Sell Zone Conditions ---
+                    elif ma3 <= ma9 and vol_ratio < 3.0:
+                        if (rsi_last < 70) and (rsi_last < rsi_prev1 < rsi_prev2) and (vol <= 0.7 * avg_vol):
+                            remark = 'Very Strong Sell'
+                        elif (rsi_last < 70) and (rsi_last < rsi_prev1 < rsi_prev2) and (vol <= avg_vol):
+                            remark = 'Strong Sell'
+                        else:
+                            remark = 'Sell Zone'
+                    else:
                         remark = 'Hold'
 
                     return remark
@@ -214,13 +161,14 @@ if not df_today.empty and LATEST_URL:
                 result_list.append(group.iloc[[-1]])
 
         df_lastday = pd.concat(result_list, ignore_index=True) if result_list else pd.DataFrame(columns=[
-            'Symbol','Date','Open','Close','Volume','Avg_Vol_9D','MA_3D','MA_9D','RSI_14D','Remarks'
+            'Symbol','Date','Open','Close','Volume','Avg_Vol_9D','MA_3D','MA_9D',
+            'RSI_14D_Last','RSI_14D_1DayBefore','RSI_14D_2DaysBefore','Remarks'
         ])
 
         # -------------------- Sort and Format --------------------
         signal_order = [
-            'Very Very Strong Buy', 'Very Strong Buy', 'Strong Buy', 'Overbought - Ready to Sell',
-            'Strong Sell', 'Much Strong Sell', 'Very Much Strong Sell', 'Very Very Strong Sell',
+            'Very Strong Buy', 'Strong Buy', 'Overbought – Ready to Sell',
+            'Very Strong Sell', 'Strong Sell',
             'Buy Zone', 'Sell Zone', 'Hold'
         ]
         df_lastday['Remarks'] = pd.Categorical(df_lastday['Remarks'], categories=signal_order, ordered=True)
@@ -230,18 +178,22 @@ if not df_today.empty and LATEST_URL:
         df_lastday['Avg_Vol_9D'] = df_lastday['Avg_Vol_9D'].fillna(0).astype(int)
         df_lastday['MA_3D'] = df_lastday['MA_3D'].round(2)
         df_lastday['MA_9D'] = df_lastday['MA_9D'].round(2)
-        df_lastday['RSI_14D'] = df_lastday['RSI_14D'].round(1)
+        df_lastday['RSI_14D_Last'] = df_lastday['RSI_14D_Last'].round(1)
+        df_lastday['RSI_14D_1DayBefore'] = df_lastday['RSI_14D_1DayBefore'].round(1)
+        df_lastday['RSI_14D_2DaysBefore'] = df_lastday['RSI_14D_2DaysBefore'].round(1)
 
-        df_lastday = df_lastday[['Symbol','Date','Open','Close','Volume','Avg_Vol_9D','MA_3D','MA_9D','RSI_14D','Remarks']]
+        df_lastday = df_lastday[['Symbol','Date','Open','Close','Volume','Avg_Vol_9D','MA_3D','MA_9D',
+                                 'RSI_14D_Last','RSI_14D_1DayBefore','RSI_14D_2DaysBefore','Remarks']]
         df_lastday.reset_index(drop=True, inplace=True)
         df_lastday.index += 1
         df_lastday.index.name = 'S.N.'
 
         df_lastday.to_csv("filtered_nepse_signals.csv", index=True)
-        print("✅ File 'filtered_nepse_signals.csv' saved successfully with standard RSI.")
+        print("✅ File 'filtered_nepse_signals.csv' saved successfully with updated condition logic.")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
+
 
 
 
