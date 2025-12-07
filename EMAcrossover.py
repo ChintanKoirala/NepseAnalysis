@@ -7,12 +7,14 @@ except ModuleNotFoundError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "nepse-scraper"])
     from nepse_scraper import Nepse_scraper
 
+# -------------------- Imports --------------------
 import pandas as pd
 import numpy as np
 import requests
 import re
 from datetime import datetime
 
+# -------------------- Config --------------------
 COLUMNS = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
 REPO_URL = "https://api.github.com/repos/ChintanKoirala/NepseAnalysis/contents/daily_data"
 RAW_BASE = "https://raw.githubusercontent.com/ChintanKoirala/NepseAnalysis/main/daily_data"
@@ -42,10 +44,11 @@ def get_latest_combined_url():
 LATEST_URL = get_latest_combined_url()
 
 # -------------------- Fetch Today's NEPSE Data --------------------
-scraper = Nepse_scraper()
+# Fix SSL verification error by disabling SSL check
+scraper = Nepse_scraper(verify_ssl=False)
+
 try:
     today_data = scraper.get_today_price()
-    # ✅ Fix: support both dict and list
     if isinstance(today_data, dict):
         content = today_data.get('content', [])
     elif isinstance(today_data, list):
@@ -68,7 +71,6 @@ filtered_data = [
 ]
 
 df_today = pd.DataFrame(filtered_data, columns=COLUMNS)
-
 if not df_today.empty:
     today_file = f"nepse_{datetime.now().strftime('%Y-%m-%d')}.csv"
     df_today.to_csv(today_file, index=False)
@@ -76,31 +78,40 @@ if not df_today.empty:
 else:
     print("⚠️ No data available for today.")
 
-# -------------------- Standard RSI --------------------
-def calculate_rsi(prices, period=RSI_PERIOD):
-    prices = pd.Series(prices).astype(float)
-    deltas = prices.diff()
-    gains = deltas.clip(lower=0)
-    losses = -deltas.clip(upper=0)
-    rsi = pd.Series(np.nan, index=prices.index)
+# -------------------- Standard RSI Calculation --------------------
+def calculate_rsi_standard(prices, period=14):
+    prices = pd.Series(prices).astype(float).reset_index(drop=True)
+    rsi = pd.Series([np.nan] * len(prices))
     if len(prices) < period + 1:
         return rsi
-    avg_gain = gains.rolling(window=period, min_periods=period).mean()
-    avg_loss = losses.rolling(window=period, min_periods=period).mean()
-    rs = avg_gain / avg_loss
-    rsi_calc = 100 - (100 / (1 + rs))
-    rsi.iloc[period:] = rsi_calc.iloc[period:]
+    for i in range(period, len(prices)):
+        window = prices[i - period:i + 1]
+        deltas = window.diff().dropna()
+        gains = deltas[deltas > 0].sum()
+        losses = -deltas[deltas < 0].sum()
+        avg_gain = gains / period
+        avg_loss = losses / period
+        if avg_loss == 0:
+            rsi_val = 100.0
+        elif avg_gain == 0:
+            rsi_val = 0.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi_val = 100 - (100 / (1 + rs))
+        rsi.iloc[i] = round(rsi_val, 1)
     return rsi
 
-# -------------------- Merge with Latest CSV --------------------
+# -------------------- Merge and Process --------------------
 if not df_today.empty and LATEST_URL:
     try:
         df_latest = pd.read_csv(LATEST_URL)
-        df_latest = df_latest[[c for c in COLUMNS if c in df_latest.columns]]
+        df_latest = df_latest[[col for col in COLUMNS if col in df_latest.columns]]
+
+        # Combine old + today
         df_combined = pd.concat([df_latest, df_today], ignore_index=True)
         df_combined.drop_duplicates(subset=['Symbol', 'Date'], keep='last', inplace=True)
         df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
-        df_combined.sort_values(by=['Symbol', 'Date'], inplace=True)
+        df_combined.sort_values(by=['Symbol','Date'], inplace=True)
 
         result_list = []
         for symbol, group in df_combined.groupby('Symbol'):
@@ -111,21 +122,64 @@ if not df_today.empty and LATEST_URL:
             group['Vol_Ratio'] = group['Volume'] / group['Avg_Vol_9D']
 
             if len(group) >= RSI_PERIOD + 3:
-                rsi_series = calculate_rsi(group['Close'].values)
+                rsi_series = calculate_rsi_standard(group['Close'].values, period=RSI_PERIOD)
                 group['RSI_14D_Last'] = np.nan
                 group['RSI_14D_1DayBefore'] = np.nan
                 group['RSI_14D_2DaysBefore'] = np.nan
+
                 group.iloc[-1, group.columns.get_loc('RSI_14D_Last')] = rsi_series.iloc[-1]
                 group.iloc[-1, group.columns.get_loc('RSI_14D_1DayBefore')] = rsi_series.iloc[-2]
                 group.iloc[-1, group.columns.get_loc('RSI_14D_2DaysBefore')] = rsi_series.iloc[-3]
+
+                # Remarks logic
+                def update_remarks(row):
+                    rsi_last = row['RSI_14D_Last']
+                    rsi_prev1 = row['RSI_14D_1DayBefore']
+                    rsi_prev2 = row['RSI_14D_2DaysBefore']
+                    ma3, ma9 = row['MA_3D'], row['MA_9D']
+                    vol_ratio = row['Vol_Ratio']
+                    vol, avg_vol = row['Volume'], row['Avg_Vol_9D']
+                    remark = ''
+
+                    # Buy Zone
+                    if ma3 >= ma9 and vol_ratio >= 0.4:
+                        if (rsi_last < 60) and (rsi_last > rsi_prev1 > rsi_prev2) and (vol_ratio >= 1.5):
+                            remark = 'Very Strong Buy'
+                        elif (rsi_last < 60) and (rsi_last > rsi_prev1 > rsi_prev2) and (vol_ratio >= 1.0):
+                            remark = 'Strong Buy'
+                        elif rsi_last >= 60:
+                            remark = 'Overbought – Ready to Sell'
+                        else:
+                            remark = 'Buy Zone'
+                    # Sell Zone
+                    elif ma3 <= ma9 and vol_ratio < 3.0:
+                        if (rsi_last < 70) and (rsi_last < rsi_prev1 < rsi_prev2) and (vol <= 0.7 * avg_vol):
+                            remark = 'Very Strong Sell'
+                        elif (rsi_last < 70) and (rsi_last < rsi_prev1 < rsi_prev2) and (vol <= avg_vol):
+                            remark = 'Strong Sell'
+                        else:
+                            remark = 'Sell Zone'
+                    else:
+                        remark = 'Hold'
+                    return remark
+
+                group['Remarks'] = group.apply(update_remarks, axis=1)
                 result_list.append(group.iloc[[-1]])
 
         df_lastday = pd.concat(result_list, ignore_index=True) if result_list else pd.DataFrame(columns=[
             'Symbol','Date','Open','Close','Volume','Avg_Vol_9D','MA_3D','MA_9D',
-            'RSI_14D_Last','RSI_14D_1DayBefore','RSI_14D_2DaysBefore'
+            'RSI_14D_Last','RSI_14D_1DayBefore','RSI_14D_2DaysBefore','Remarks'
         ])
 
-        # Formatting
+        # Sort and format
+        signal_order = [
+            'Very Strong Buy', 'Strong Buy', 'Overbought – Ready to Sell',
+            'Very Strong Sell', 'Strong Sell',
+            'Buy Zone', 'Sell Zone', 'Hold'
+        ]
+        df_lastday['Remarks'] = pd.Categorical(df_lastday['Remarks'], categories=signal_order, ordered=True)
+        df_lastday.sort_values(by=['Remarks','Symbol'], inplace=True)
+
         df_lastday['Date'] = pd.to_datetime(df_lastday['Date']).dt.strftime('%Y-%m-%d')
         df_lastday['Avg_Vol_9D'] = df_lastday['Avg_Vol_9D'].fillna(0).astype(int)
         df_lastday['MA_3D'] = df_lastday['MA_3D'].round(2)
@@ -134,11 +188,14 @@ if not df_today.empty and LATEST_URL:
         df_lastday['RSI_14D_1DayBefore'] = df_lastday['RSI_14D_1DayBefore'].round(1)
         df_lastday['RSI_14D_2DaysBefore'] = df_lastday['RSI_14D_2DaysBefore'].round(1)
 
+        df_lastday = df_lastday[['Symbol','Date','Open','Close','Volume','Avg_Vol_9D','MA_3D','MA_9D',
+                                 'RSI_14D_Last','RSI_14D_1DayBefore','RSI_14D_2DaysBefore','Remarks']]
         df_lastday.reset_index(drop=True, inplace=True)
         df_lastday.index += 1
         df_lastday.index.name = 'S.N.'
+
         df_lastday.to_csv("filtered_nepse_signals.csv", index=True)
-        print("✅ File 'filtered_nepse_signals.csv' saved successfully.")
+        print("✅ File 'filtered_nepse_signals.csv' saved successfully with SSL fix.")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
