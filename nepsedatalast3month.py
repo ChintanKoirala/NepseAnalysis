@@ -66,18 +66,23 @@ else:
 
 # this code combines last traded day data from nepse and combines it with other latest data for 60 days only
 
+# -------------------- Auto install --------------------
 try:
-    from nepse_scraper import Nepse_scraper
+    from nepse_scraper import NepseScraper
 except ModuleNotFoundError:
     import sys, subprocess
     subprocess.check_call([sys.executable, "-m", "pip", "install", "nepse-scraper"])
-    from nepse_scraper import Nepse_scraper
+    from nepse_scraper import NepseScraper
 
 # -------------------- Imports --------------------
 import pandas as pd
 import requests
 import re
 from datetime import datetime
+import urllib3
+
+# -------------------- Disable SSL warnings --------------------
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # -------------------- Config --------------------
 COLUMNS = ['Symbol', 'Date', 'Open', 'Close', 'Volume']
@@ -88,27 +93,31 @@ MAX_DAYS = 60  # keep only latest 60 unique days
 # -------------------- Find Latest combined_nepse File --------------------
 def get_latest_combined_url():
     try:
-        resp = requests.get(REPO_URL)
+        resp = requests.get(REPO_URL, verify=False)
         resp.raise_for_status()
         files = resp.json()
-        combined_files = [
-            f["name"] for f in files if f["name"].startswith("combined_nepse_") and f["name"].endswith(".csv")
-        ]
-        if not combined_files:
-            raise ValueError("No combined_nepse_*.csv file found in repo")
 
-        # Extract dates and find latest
+        combined_files = [
+            f["name"] for f in files
+            if f["name"].startswith("combined_nepse_") and f["name"].endswith(".csv")
+        ]
+
+        if not combined_files:
+            raise ValueError("No combined_nepse file found")
+
         dates = []
         for fname in combined_files:
             match = re.search(r"combined_nepse_(\d{4}-\d{2}-\d{2})\.csv", fname)
             if match:
                 dates.append((match.group(1), fname))
+
         if not dates:
-            raise ValueError("No valid dated combined_nepse file found")
+            raise ValueError("No valid dated files found")
 
         latest_date, latest_file = max(dates, key=lambda x: x[0])
         print(f"📂 Latest GitHub file found: {latest_file}")
         return f"{RAW_BASE}/{latest_file}"
+
     except Exception as e:
         print(f"⚠️ Failed to fetch latest combined file: {e}")
         return None
@@ -116,10 +125,19 @@ def get_latest_combined_url():
 LATEST_URL = get_latest_combined_url()
 
 # -------------------- Fetch Today's NEPSE Data --------------------
-scraper = Nepse_scraper()
+scraper = NepseScraper(verify_ssl=False)
+
 try:
     today_data = scraper.get_today_price()
-    content = today_data.get('content', [])
+
+    # ✅ FIX: Works for both list and dict responses
+    if isinstance(today_data, dict):
+        content = today_data.get('content', [])
+    elif isinstance(today_data, list):
+        content = today_data
+    else:
+        content = []
+
 except Exception as e:
     print(f"⚠️ Failed to fetch today's NEPSE data: {e}")
     content = []
@@ -154,28 +172,29 @@ if not df_today.empty and LATEST_URL:
         # Keep only expected columns
         df_latest = df_latest[[col for col in COLUMNS if col in df_latest.columns]]
 
-        # Combine new + old
+        # Combine old + new
         df_combined = pd.concat([df_latest, df_today], ignore_index=True)
 
-        # Drop duplicates (Symbol + Date unique)
+        # Remove duplicates
         df_combined.drop_duplicates(subset=['Symbol', 'Date'], keep='last', inplace=True)
 
-        # Convert Date to datetime
+        # Convert date
         df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
 
         # Sort descending
         df_combined.sort_values(by='Date', ascending=False, inplace=True)
 
-        # Keep only latest MAX_DAYS unique dates
+        # Keep only last MAX_DAYS unique dates
         recent_dates = df_combined['Date'].dropna().unique()[:MAX_DAYS]
         df_combined = df_combined[df_combined['Date'].isin(recent_dates)]
 
-        # Ensure Date formatted back to string
+        # Format back to string
         df_combined['Date'] = df_combined['Date'].dt.strftime('%Y-%m-%d')
 
-        # Save combined
+        # Save combined file
         df_combined.to_csv("combined_nepse.csv", index=False)
         print(f"✅ Combined CSV updated (last {MAX_DAYS} days kept)")
+
     except Exception as e:
         print(f"⚠️ Failed to merge with GitHub CSV: {e}")
 
