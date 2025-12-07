@@ -2,7 +2,7 @@
 
 
 # this code calculates 9 days average vol  and 9 day moving average 
-# -------------------- Auto install --------------------
+# -------------------- Auto install nepse-scraper --------------------
 try:
     from nepse_scraper import NepseScraper
 except ModuleNotFoundError:
@@ -17,7 +17,7 @@ import re
 from datetime import datetime
 import urllib3
 
-# -------------------- Disable SSL warnings --------------------
+# -------------------- Disable SSL Warnings --------------------
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # -------------------- Config --------------------
@@ -61,15 +61,23 @@ scraper = NepseScraper(verify_ssl=False)
 
 try:
     today_data = scraper.get_today_price()
-    content = today_data.get('content', [])
+
+    # ✅ FIX: Support both list and dict response
+    if isinstance(today_data, dict):
+        content = today_data.get('content', [])
+    elif isinstance(today_data, list):
+        content = today_data
+    else:
+        content = []
+
 except Exception as e:
     print(f"⚠️ Failed to fetch today's NEPSE data: {e}")
     content = []
 
 # -------------------- Process Today's Data --------------------
-rows = []
+filtered_data = []
 for item in content:
-    rows.append({
+    filtered_data.append({
         'Symbol': item.get('symbol', ''),
         'Date': item.get('businessDate', ''),
         'Open': item.get('openPrice', 0),
@@ -77,7 +85,7 @@ for item in content:
         'Volume': item.get('totalTradedQuantity', 0)
     })
 
-df_today = pd.DataFrame(rows, columns=COLUMNS)
+df_today = pd.DataFrame(filtered_data, columns=COLUMNS)
 
 # -------------------- Save Today's File --------------------
 if not df_today.empty:
@@ -88,7 +96,7 @@ if not df_today.empty:
 else:
     print("⚠️ No data available for today.")
 
-# -------------------- Merge + Calculate RSI --------------------
+# -------------------- Merge + Calculate RSI & MA --------------------
 if not df_today.empty and LATEST_URL:
     try:
         df_latest = pd.read_csv(LATEST_URL)
@@ -168,10 +176,11 @@ if not df_today.empty and LATEST_URL:
             df_final.index.name = 'S.N.'
 
             df_final.to_csv("completedata.csv", index=True)
-            print("✅ File 'completedata.csv' saved successfully")
+            print("✅ File 'completedata.csv' saved successfully.")
 
     except Exception as e:
         print(f"⚠️ Failed to process and calculate: {e}")
+
 
 
 # upload in github
