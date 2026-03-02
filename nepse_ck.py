@@ -1,5 +1,4 @@
 # # this code abstracts todays necessary data from nepse scraper
-
 # try:
 #     from nepse_scraper import Nepse_scraper
 # except ModuleNotFoundError:
